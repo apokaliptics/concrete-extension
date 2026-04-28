@@ -1,0 +1,46 @@
+.rv-var,
+.rv-func {
+  font-family: var(--font-text, inherit);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.rv-var {
+  background: rgba(120, 120, 120, 0.08);
+}
+
+.rv-var--color {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rv-swatch {
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.rv-var--error,
+.rv-func--error {
+  text-decoration: underline wavy #cc3b3b;
+  text-underline-offset: 2px;
+  background: rgba(204, 59, 59, 0.08);
+}
+
+.rv-tooltip {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 280px;
+}
+
+.rv-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.rv-tooltip-row {
+  opacity: 0.85;
+}

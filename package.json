@@ -1,0 +1,24 @@
+{
+  "name": "obsidian-reactive-variables",
+  "version": "0.1.0",
+  "description": "Reactive variable system for Markdown notes.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs dev",
+    "build": "node esbuild.config.mjs production",
+    "version": "node esbuild.config.mjs production"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/language": "^6.10.2",
+    "@codemirror/lint": "^6.7.1",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "^6.26.2",
+    "mathjs": "^12.4.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0",
+    "obsidian": "^1.12.3",
+    "typescript": "^5.5.4"
+  }
+}
