@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-reactive-variables",
+  "name": "concrete-extension",
   "version": "0.1.0",
   "description": "Reactive variable system for Markdown notes.",
   "main": "main.js",

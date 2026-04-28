@@ -1,10 +1,10 @@
 {
-  "id": "reactive-variables",
-  "name": "Reactive Variables",
+  "id": "concrete",
+  "name": "Concrete",
   "version": "0.1.0",
   "minAppVersion": "1.6.0",
   "description": "Reactive variable system for Markdown notes.",
-  "author": "Your Name",
+  "author": "apokaliptics",
   "authorUrl": "",
   "isDesktopOnly": false
 }
