@@ -13,7 +13,7 @@ import {
   WidgetType
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
-
+import type { SyntaxNode } from "@lezer/common";
 import {
   DeclBlockRange,
   isColorString,
@@ -329,7 +329,7 @@ function isInDeclBlock(pos: number, blocks: DeclBlockRange[]): boolean {
 }
 
 function isInCode(state: EditorState, pos: number): boolean {
-  let node: any = syntaxTree(state).resolveInner(pos, -1);
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
   while (node) { if (CODE_NODE_NAMES.has(node.name)) return true; node = node.parent; }
   return false;
 }
