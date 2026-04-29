@@ -51,6 +51,24 @@
 	border-radius: 0 !important;
 }
 
+/* ── Fold Widget ── */
+.rv-fold-widget {
+	display: inline-block;
+	margin-left: 10px;
+	padding: 2px 8px;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	background-color: var(--background-secondary);
+	border-radius: 4px;
+	cursor: pointer;
+	user-select: none;
+	transition: color 0.2s, background-color 0.2s;
+}
+.rv-fold-widget:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
 /* ── Dash-level outliner ── */
 
 /* Bullet character styling */

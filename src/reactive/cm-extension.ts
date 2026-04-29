@@ -2,7 +2,9 @@ import {
   EditorState,
   Extension,
   StateEffect,
-  StateField
+  StateField,
+  RangeSet,
+  RangeValue
 } from "@codemirror/state";
 import {
   Decoration,
@@ -70,9 +72,36 @@ const varStateField = StateField.define<VarState>({
   }
 });
 
+class FoldMarker extends RangeValue {}
+const toggleFoldEffect = StateEffect.define<{from: number, fold: boolean}>();
+
+const foldStateField = StateField.define<RangeSet<FoldMarker>>({
+  create() {
+    return RangeSet.empty;
+  },
+  update(value, tr) {
+    value = value.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(toggleFoldEffect)) {
+        if (e.value.fold) {
+          value = value.update({
+            add: [{ from: e.value.from, to: e.value.from, value: new FoldMarker() }]
+          });
+        } else {
+          value = value.update({
+            filter: (from) => from !== e.value.from
+          });
+        }
+      }
+    }
+    return value;
+  }
+});
+
 export function reactiveVariablesExtension(): Extension {
   return [
     varStateField,
+    foldStateField,
     decorationPlugin,
     cssVarPlugin,
     debouncedReparsePlugin
@@ -91,12 +120,16 @@ const decorationPlugin = ViewPlugin.fromClass(
       const hasReparse = update.transactions.some((tr) =>
         tr.effects.some((effect) => effect.is(reparseEffect))
       );
+      const hasFoldToggle = update.transactions.some((tr) =>
+        tr.effects.some((effect) => effect.is(toggleFoldEffect))
+      );
 
       if (
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
-        hasReparse
+        hasReparse ||
+        hasFoldToggle
       ) {
         this.decorations = buildDecorations(update.view);
       }
@@ -229,16 +262,93 @@ class BulletWidget extends WidgetType {
   }
 }
 
+class FoldWidget extends WidgetType {
+  constructor(public text: string, public blockFrom: number, public isFolded: boolean) {
+    super();
+  }
+
+  eq(other: FoldWidget) {
+    return other.text === this.text && other.isFolded === this.isFolded && other.blockFrom === this.blockFrom;
+  }
+
+  toDOM(view: EditorView) {
+    const span = document.createElement("span");
+    span.className = "rv-fold-widget";
+    span.textContent = this.isFolded ? `▶ [${this.text}]` : `▼`;
+    span.onclick = (e) => {
+      e.preventDefault();
+      view.dispatch({
+        effects: toggleFoldEffect.of({ from: this.blockFrom, fold: !this.isFolded })
+      });
+    };
+    return span;
+  }
+}
+
 /* ── Decorations ── */
 
 function buildDecorations(view: EditorView): DecorationSet {
   const varState = view.state.field(varStateField);
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const decorations: Array<{ from: number; to: number; value: Decoration }> = [];
+  
+  const foldState = view.state.field(foldStateField);
+  const foldedBlocks = new Set<number>();
+  foldState.between(0, view.state.doc.length, (from) => {
+    foldedBlocks.add(from);
+  });
+
+  const isPosFolded = (pos: number) => {
+    for (const block of varState.blocks) {
+      if (foldedBlocks.has(block.from)) {
+        const firstLineTo = view.state.doc.lineAt(block.from).to;
+        if (pos > firstLineTo && pos <= block.to) return true;
+      }
+    }
+    return false;
+  };
+
+  // Fold widgets
+  for (const block of varState.blocks) {
+    if (block.source !== "vars-block") continue;
+
+    const isFolded = foldedBlocks.has(block.from);
+    let colors = 0;
+    let textRules = 0;
+    for (const rule of varState.rules.values()) {
+      for (const style of rule.styles) {
+        if (style.valFrom >= block.from && style.valTo <= block.to) {
+          if (style.section === "colors") colors++;
+          else if (style.section === "text") textRules++;
+        }
+      }
+    }
+    const text = `VARS: ${colors} colors, ${textRules} styles`;
+
+    const firstLine = view.state.doc.lineAt(block.from);
+    decorations.push({
+      from: firstLine.to,
+      to: firstLine.to,
+      value: Decoration.widget({
+        widget: new FoldWidget(text, block.from, isFolded),
+        side: 1
+      })
+    });
+
+    if (isFolded) {
+      decorations.push({
+        from: firstLine.to,
+        to: block.to,
+        value: Decoration.replace({})
+      });
+    }
+  }
 
   // Color swatches inside the :::vars block
   for (const rule of varState.rules.values()) {
     for (const style of rule.styles) {
+      if (isPosFolded(style.valFrom)) continue;
+
       if (isColorString(style.val)) {
         decorations.push({
           from: style.valFrom,

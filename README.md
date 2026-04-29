@@ -15,6 +15,7 @@ Define custom text wrappers, inline color styles, CSS variables, and dash-based 
 - **CSS variable injection** — Keys like `header_size = 24` become `--header_size: 24px` CSS variables you can use in custom snippets.
 - **Dash-level outliner** — Lines starting with `-`, `--`, `---` etc. become indented outline levels with aesthetic bullets, guide lines, and fading opacity.
 - **Ghost dash effect** — Dashes are hidden on non-active lines and replaced with styled bullets. Click into a line to reveal the raw dashes for editing.
+- **Collapsible config block** — The `:::vars` block features an inline toggle. Fold it away when you're done configuring, and it will cleanly display a summary like `▶ [VARS: 4 colors, 2 styles]`.
 - **Live Preview & Reading View** — All features work in both editor modes.
 
 ## How to use
