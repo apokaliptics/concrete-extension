@@ -18,7 +18,9 @@ import {
   DeclBlockRange,
   isColorString,
   RuleEntry,
-  parseDeclarations
+  parseDeclarations,
+  findWrapperMatchesInText,
+  parseDashLevel
 } from "./engine";
 import { applyCssVarsToElement } from "./utils";
 
@@ -173,6 +175,8 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
   }
 );
 
+/* ── Widgets ── */
+
 class ColorSwatchWidget extends WidgetType {
   constructor(public color: string, public from: number, public to: number) {
     super();
@@ -185,35 +189,56 @@ class ColorSwatchWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrapper = document.createElement("span");
     wrapper.className = "rv-color-picker-wrapper";
-    
+
     const input = document.createElement("input");
     input.type = "color";
-    
+
     let hexColor = this.color;
     if (hexColor.length === 4) {
-      hexColor = '#' + hexColor[1] + hexColor[1] + hexColor[2] + hexColor[2] + hexColor[3] + hexColor[3];
+      hexColor = "#" + hexColor[1] + hexColor[1] + hexColor[2] + hexColor[2] + hexColor[3] + hexColor[3];
     }
     input.value = hexColor;
-    
     input.className = "rv-color-picker";
-    input.onchange = (e) => {
+    input.onchange = () => {
       view.dispatch({
         changes: { from: this.from, to: this.to, insert: input.value }
       });
     };
-    
+
     wrapper.appendChild(input);
     return wrapper;
   }
 }
 
+const BULLET_CHARS = ["•", "◦", "▸", "▹", "⁃", "·"];
+
+class BulletWidget extends WidgetType {
+  constructor(public level: number) {
+    super();
+  }
+
+  eq(other: BulletWidget) {
+    return other.level === this.level;
+  }
+
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = `rv-bullet rv-bullet-${this.level}`;
+    span.textContent = BULLET_CHARS[Math.min(this.level - 1, BULLET_CHARS.length - 1)] + " ";
+    return span;
+  }
+}
+
+/* ── Decorations ── */
+
 function buildDecorations(view: EditorView): DecorationSet {
   const varState = view.state.field(varStateField);
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const decorations: Array<{ from: number; to: number; value: Decoration }> = [];
-  
+
+  // Color swatches inside the :::vars block
   for (const rule of varState.rules.values()) {
-    if (rule.section === "colors" || isColorString(rule.val)) {
+    if (isColorString(rule.val)) {
       decorations.push({
         from: rule.valFrom,
         to: rule.valTo,
@@ -231,69 +256,90 @@ function buildDecorations(view: EditorView): DecorationSet {
   }
 
   const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper");
-  if (wrappers.length === 0 && decorations.length === 0) return Decoration.none;
 
   for (const range of view.visibleRanges) {
     const startLine = view.state.doc.lineAt(range.from).number;
     const endLine = view.state.doc.lineAt(range.to).number;
 
     for (let lineNo = startLine; lineNo <= endLine; lineNo += 1) {
-      if (lineNo === activeLine) continue;
-
       const line = view.state.doc.line(lineNo);
       if (isInDeclBlock(line.from, varState.blocks)) continue;
 
-      const text = line.text;
-      let index = 0;
+      // ── Dash-level decorations ──
+      const dashLevel = parseDashLevel(line.text);
+      if (dashLevel > 0) {
+        decorations.push({
+          from: line.from,
+          to: line.from,
+          value: Decoration.line({ class: `rv-level rv-level-${Math.min(dashLevel, 6)}` })
+        });
 
-      while (index < text.length) {
-        let bestMatch: { rule: RuleEntry, startIdx: number, endIdx: number } | null = null;
+        if (lineNo !== activeLine) {
+          // Ghost dash: hide dashes + trailing space, replace with bullet
+          const dashEnd = line.from + dashLevel;
+          // Also skip the space after dashes
+          const replaceEnd = dashEnd + 1;
+          decorations.push({
+            from: line.from,
+            to: replaceEnd,
+            value: Decoration.replace({
+              widget: new BulletWidget(dashLevel)
+            })
+          });
+        }
+      }
 
-        for (const rule of wrappers) {
-          const startSym = rule.startSym!;
-          const endSym = rule.endSym!;
+      // ── Wrapper decorations (skip active line) ──
+      if (lineNo === activeLine) continue;
+      if (wrappers.length === 0) continue;
 
-          const startIdx = text.indexOf(startSym, index);
-          if (startIdx !== -1) {
-            const contentStart = startIdx + startSym.length;
-            const endIdx = text.indexOf(endSym, contentStart);
-            if (endIdx !== -1) {
-              if (!bestMatch || startIdx < bestMatch.startIdx) {
-                bestMatch = { rule, startIdx, endIdx: endIdx + endSym.length };
-              }
-            }
-          }
+      const matches = findWrapperMatchesInText(line.text, line.from, wrappers);
+
+      for (const m of matches) {
+        if (isInCode(view.state, m.fullFrom)) continue;
+
+        // Hide start delimiter
+        decorations.push({
+          from: m.fullFrom,
+          to: m.contentFrom,
+          value: Decoration.replace({})
+        });
+
+        // Style the content
+        let markClass = "";
+        let markAttrs: Record<string, string> | undefined;
+
+        if (m.rule.section === "colors" || isColorString(m.rule.val)) {
+          markAttrs = { style: `color: ${m.rule.val}` };
+          markClass = "rv-styled";
+        } else {
+          markClass = `rv-styled rv-${m.rule.val}`;
         }
 
-        if (!bestMatch) break;
-        
-        const from = line.from + bestMatch.startIdx;
-        const to = line.from + bestMatch.endIdx;
-        
-        if (!isInCode(view.state, from)) {
-          let markDeco;
-          if (bestMatch.rule.section === "colors" || isColorString(bestMatch.rule.val)) {
-            markDeco = Decoration.mark({
-              attributes: { style: `color: ${bestMatch.rule.val}` },
-              class: "rv-styled"
-            });
-          } else {
-            markDeco = Decoration.mark({
-              class: `rv-styled rv-${bestMatch.rule.val}`
-            });
-          }
+        decorations.push({
+          from: m.contentFrom,
+          to: m.contentTo,
+          value: Decoration.mark({
+            class: markClass,
+            ...(markAttrs ? { attributes: markAttrs } : {})
+          })
+        });
 
-          decorations.push({ from, to, value: markDeco });
-        }
-        
-        index = bestMatch.endIdx;
+        // Hide end delimiter
+        decorations.push({
+          from: m.contentTo,
+          to: m.fullTo,
+          value: Decoration.replace({})
+        });
       }
     }
   }
 
-  decorations.sort((a, b) => a.from - b.from);
+  decorations.sort((a, b) => a.from - b.from || a.to - b.to);
   return Decoration.set(decorations, true);
 }
+
+/* ── Helpers ── */
 
 function shouldReparse(update: ViewUpdate, blocks: DeclBlockRange[]): boolean {
   let hit = false;

@@ -1,32 +1,34 @@
 # Concrete Extension
 
-A lightweight and highly customizable text styling and color highlighting system for Obsidian. 
+A lightweight text styling, color highlighting, and structural outliner plugin for Obsidian.
 
-This plugin allows you to define custom text wrappers, inline styles, and CSS variables directly within your notes using a simple, readable syntax. It completely bypasses complex settings menus, letting you control your document's aesthetics right from the editor!
+Define custom text wrappers, inline color styles, CSS variables, and dash-based outline levels directly inside your notes using a simple, readable syntax — no settings menus required.
 
 ## Features
 
-- **Custom Text Wrappers**: Turn `(any text)` red, `"any text"` blue, or `^^any text^^` into a bold header just by defining a simple rule.
-- **Interactive Color Palette**: Any hex color you define gets an interactive color swatch right inside the editor! Clicking it opens your system color picker, allowing you to tweak colors on the fly.
-- **Live Preview & Reading View Support**: Your custom styles are rendered beautifully in both Live Preview and Reading View.
-- **CSS Variables Injection**: Define CSS variables directly in your notes (like `header_size = 24`) that you can use in custom CSS snippets.
-- **Tag Override**: The plugin automatically prevents Obsidian from incorrectly rendering your hex color codes as clickable tags.
+- **Custom text wrappers** — Turn `(text)` red, `"text"` blue, or `^text^` into a bold header by defining a simple rule.
+- **Letter wrappers** — Use letter pairs like `hh text hh` for highlighting. The letters must be grouped together and spaced from the content to avoid false matches with normal words.
+- **Delimiter hiding** — Wrapper symbols are hidden in the rendered view. You only see the styled content; click into the line to reveal the raw syntax.
+- **Interactive color palette** — Every hex color you define gets a clickable swatch in the editor. Click it to open the system color picker and update the color inline.
+- **CSS variable injection** — Keys like `header_size = 24` become `--header_size: 24px` CSS variables you can use in custom snippets.
+- **Dash-level outliner** — Lines starting with `-`, `--`, `---` etc. become indented outline levels with aesthetic bullets, guide lines, and fading opacity.
+- **Ghost dash effect** — Dashes are hidden on non-active lines and replaced with styled bullets. Click into a line to reveal the raw dashes for editing.
+- **Live Preview & Reading View** — All features work in both editor modes.
 
-## How to Use
+## How to use
 
-To define your styling rules, create a `:::vars` code block anywhere in your note (or use the YAML frontmatter).
+### 1. Create a `:::vars` block
 
-The block is divided into two optional sections: `colors` (or `colour`/`colours`) and `text`.
+Place this block anywhere in your note. It defines all your styling rules.
 
-### Example Configuration
-
-```yaml
+```
 :::vars
-colors
+##colors
 () = #ef4444
 "" = #3b82f6
+hh = #10b981
 
-text
+##text
 header_size = 24
 paragraph_size = 14
 ^^ = header
@@ -34,31 +36,133 @@ paragraph_size = 14
 :::
 ```
 
-### The `colors` Section
-Rules placed under the `colors` category will treat their values as colors. 
-For example, `() = #ef4444` means: "Find any text wrapped in `()` and color it `#ef4444`".
-- In the editor, a small, clickable color swatch will appear next to `#ef4444`. You can click this swatch to open a color picker and interactively change the color!
+### 2. Sections
 
-### The `text` Section
-Rules placed under the `text` category will treat their values as styling classes.
-- **Wrappers**: `^^ = header` means: "Find any text wrapped in `^^` and apply the `.rv-header` CSS class to it."
-- **Variables**: `header_size = 24` is an alphanumeric key. Because it doesn't represent a text wrapper, the plugin automatically exports it as a CSS variable `--header_size: 24px` to the document, which the `.rv-header` class uses to scale your text!
+Rules are organized under section headers prefixed with `##`:
 
-### Wrapper Syntax Rules
-The plugin intelligently identifies your wrapper boundaries based on the characters you provide:
-- **Asymmetrical Wrappers (e.g., `()` or `[]` or `<>`)**: The plugin uses the first character as the start boundary and the second character as the end boundary. E.g., `(Text goes here)`.
-- **Symmetrical Wrappers (e.g., `""` or `^^` or `;;`)**: If you provide two identical characters, the plugin will use that character as both the start and end boundary. E.g., `"Text goes here"` or `^Text goes here^`.
+| Section | Purpose |
+|---|---|
+| `##colors` (or `##colour`, `##colours`) | Rules here treat values as colors. Wrapped text will be colored. |
+| `##text` | Rules here treat values as CSS class names. Wrapped text gets the corresponding `.rv-{value}` class applied. |
+
+### 3. Color wrappers (under `##colors`)
+
+Define a wrapper symbol and assign it a color value.
+
+```
+##colors
+() = #ef4444
+"" = #3b82f6
+```
+
+Then use them in your note:
+
+```
+(This text will be red!)
+"This text will be blue!"
+```
+
+**Result:** The wrapper symbols `(`, `)`, `"`, `"` are hidden. You only see the styled text.
+
+### 4. Letter wrappers
+
+You can also use letter pairs as wrappers. They **must be spaced** from the content:
+
+```
+##colors
+hh = #10b981
+```
+
+Usage:
+
+```
+hh This text will be green hh
+```
+
+> **Why spaces?** To prevent false matches with normal words that happen to start and end with the same letter. `hh text hh` matches, but `hello` does not.
+
+### 5. Text wrappers (under `##text`)
+
+Define wrappers that apply CSS classes instead of colors.
+
+```
+##text
+^^ = header
+.. = paragraph
+```
+
+Usage:
+
+```
+^This becomes a header^
+.This becomes a paragraph.
+```
+
+The plugin ships with built-in styles for `header` and `paragraph`:
+
+| Class | Effect |
+|---|---|
+| `.rv-header` | Bold text, sized by `--header_size` (default `1.5em`) |
+| `.rv-paragraph` | Normal text, sized by `--paragraph_size` (default `1em`) |
+
+You can define any value and style it with a CSS snippet targeting `.rv-{value}`.
+
+### 6. CSS variables
+
+Alphanumeric keys with underscores or hyphens become CSS variables:
+
+```
+header_size = 24
+paragraph_size = 14
+```
+
+These become `--header_size: 24px` and `--paragraph_size: 14px` on the document container. The built-in `.rv-header` and `.rv-paragraph` classes reference these variables.
+
+### 7. Dash-level outliner
+
+Start any line with one or more dashes followed by a space to create outline levels:
+
+```
+- Level 1 item
+-- Level 2 sub-item
+--- Level 3 deep item
+---- Level 4
+```
+
+**What happens:**
+
+- Each dash level gets increasing indentation and a guide line on the left.
+- The raw dashes are replaced with aesthetic bullet characters (`•`, `◦`, `▸`, etc.).
+- Deeper levels automatically fade in opacity for visual hierarchy.
+- **Ghost dash effect:** Click into a line to reveal the raw dashes for editing. Move away and the bullets return.
+
+### 8. Wrapper syntax rules
+
+| Key | Type | Start | End | Example |
+|---|---|---|---|---|
+| `()` | Asymmetric symbols | `(` | `)` | `(colored text)` |
+| `""` | Symmetric symbols | `"` | `"` | `"colored text"` |
+| `^^` | Symmetric symbols | `^` | `^` | `^header text^` |
+| `hh` | Letter wrapper | `hh ` | ` hh` | `hh highlighted hh` |
+
+**Asymmetric** (2 different chars): first char = start, second char = end.
+**Symmetric** (2 same chars): that char = both start and end.
+**Letters** (2+ letters): the full key is used, must be surrounded by spaces.
+
+### 9. Interactive color picker
+
+In the editor, every hex color value in your `:::vars` block gets a small color swatch next to it. Click the swatch to open your system's native color picker — changing the color automatically updates the hex code in your note.
 
 ## Installation
 
-### Manual Installation
-1. Download the latest release from the Releases page.
-2. Extract `main.js`, `manifest.json`, and `styles.css` into your vault's plugins folder: `VaultFolder/.obsidian/plugins/concrete-extension/`.
+### Manual
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release.
+2. Place them in `VaultFolder/.obsidian/plugins/concrete-extension/`.
 3. Reload Obsidian.
-4. Enable "Concrete Extension" in your Community Plugins settings.
+4. Enable **Concrete Extension** in **Settings → Community plugins**.
 
 ### Development
-1. Clone this repository into your `.obsidian/plugins/` folder.
-2. Run `npm install` to install dependencies.
-3. Run `npm run dev` to compile the plugin and watch for changes.
-4. (Optional) Run `npm run lint` to check for style errors.
+1. Clone this repo into your `.obsidian/plugins/` folder.
+2. `npm install`
+3. `npm run dev` — compiles and watches for changes.
+4. `npm run lint` — checks for style errors.

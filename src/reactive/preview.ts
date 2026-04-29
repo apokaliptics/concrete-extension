@@ -1,6 +1,6 @@
 import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
 import { Text as CmText } from "@codemirror/state";
-import { parseDeclarations, RuleEntry, isColorString } from "./engine";
+import { parseDeclarations, RuleEntry, isColorString, findWrapperMatchesInText, parseDashLevel } from "./engine";
 import { applyCssVarsToElement } from "./utils";
 
 export function createPreviewProcessor(app: App) {
@@ -20,6 +20,7 @@ export function createPreviewProcessor(app: App) {
     }
 
     applyInlineSubstitutions(el, rules);
+    applyLineSubstitutions(el);
   };
 }
 
@@ -33,14 +34,9 @@ function applyInlineSubstitutions(el: HTMLElement, rules: Map<string, RuleEntry>
       if (!(node instanceof Text) || !node.nodeValue) {
         return NodeFilter.FILTER_REJECT;
       }
-      
-      const hasSym = wrappers.some(w => node.nodeValue!.includes(w.startSym!));
-      if (!hasSym) return NodeFilter.FILTER_REJECT;
-
       if (isInCodeNode(node) || isInReactiveNode(node)) {
         return NodeFilter.FILTER_REJECT;
       }
-
       return NodeFilter.FILTER_ACCEPT;
     }
   });
@@ -58,58 +54,58 @@ function applyInlineSubstitutions(el: HTMLElement, rules: Map<string, RuleEntry>
 }
 
 function renderTextNode(text: string, wrappers: RuleEntry[]): DocumentFragment | null {
+  const matches = findWrapperMatchesInText(text, 0, wrappers);
+  if (matches.length === 0) return null;
+
   const fragment = document.createDocumentFragment();
   let index = 0;
-  let changed = false;
 
-  while (index < text.length) {
-    let bestMatch: { rule: RuleEntry, startIdx: number, endIdx: number } | null = null;
-
-    for (const rule of wrappers) {
-      const startSym = rule.startSym!;
-      const endSym = rule.endSym!;
-
-      const startIdx = text.indexOf(startSym, index);
-      if (startIdx !== -1) {
-        const contentStart = startIdx + startSym.length;
-        const endIdx = text.indexOf(endSym, contentStart);
-        if (endIdx !== -1) {
-          if (!bestMatch || startIdx < bestMatch.startIdx) {
-            bestMatch = { rule, startIdx, endIdx: endIdx + endSym.length };
-          }
-        }
-      }
+  for (const m of matches) {
+    // Text before the match
+    if (m.fullFrom > index) {
+      fragment.appendChild(document.createTextNode(text.slice(index, m.fullFrom)));
     }
 
-    if (!bestMatch) {
-      fragment.appendChild(document.createTextNode(text.slice(index)));
-      break;
+    // Content only (delimiters hidden)
+    const contentText = text.slice(m.contentFrom, m.contentTo);
+    const span = document.createElement("span");
+    span.className = "rv-styled";
+    span.textContent = contentText;
+
+    if (m.rule.section === "colors" || isColorString(m.rule.val)) {
+      span.style.color = m.rule.val;
+    } else {
+      span.classList.add(`rv-${m.rule.val}`);
     }
 
-    if (bestMatch.startIdx > index) {
-      fragment.appendChild(document.createTextNode(text.slice(index, bestMatch.startIdx)));
-    }
-
-    fragment.appendChild(createStyledSpan(text.slice(bestMatch.startIdx, bestMatch.endIdx), bestMatch.rule));
-    index = bestMatch.endIdx;
-    changed = true;
+    fragment.appendChild(span);
+    index = m.fullTo;
   }
 
-  return changed ? fragment : null;
+  if (index < text.length) {
+    fragment.appendChild(document.createTextNode(text.slice(index)));
+  }
+
+  return fragment;
 }
 
-function createStyledSpan(text: string, rule: RuleEntry): HTMLElement {
-  const span = document.createElement("span");
-  span.className = "rv-styled";
-  span.textContent = text;
-  
-  if (rule.section === "colors" || isColorString(rule.val)) {
-    span.style.color = rule.val;
-  } else {
-    span.classList.add(`rv-${rule.val}`);
-  }
+function applyLineSubstitutions(el: HTMLElement) {
+  const BULLET_CHARS = ["•", "◦", "▸", "▹", "⁃", "·"];
+  const paragraphs = el.querySelectorAll("p");
 
-  return span;
+  for (const p of Array.from(paragraphs)) {
+    const firstChild = p.firstChild;
+    if (!(firstChild instanceof window.Text)) continue;
+
+    const text = firstChild.nodeValue ?? "";
+    const level = parseDashLevel(text);
+    if (level === 0) continue;
+
+    p.classList.add("rv-level", `rv-level-${Math.min(level, 6)}`);
+
+    const bullet = BULLET_CHARS[Math.min(level - 1, BULLET_CHARS.length - 1)];
+    firstChild.nodeValue = bullet + " " + text.slice(level).trimStart();
+  }
 }
 
 function isInCodeNode(node: Node): boolean {

@@ -1,5 +1,4 @@
 .rv-styled {
-	/* Basic reset/transition for styled elements */
 	transition: color 0.2s ease, background-color 0.2s ease;
 }
 
@@ -7,29 +6,14 @@
 	font-weight: bold;
 	font-size: var(--header_size, 1.5em);
 	color: var(--text-normal);
-	display: block; /* Headers are usually block, but we keep inline-block just in case */
-	margin-top: 0.5em;
-	margin-bottom: 0.5em;
-}
-
-/* Ensure inside the editor it looks inline if needed */
-.cm-line .rv-header {
-	display: inline;
 }
 
 .rv-paragraph {
 	font-size: var(--paragraph_size, 1em);
-	display: block;
-	margin-top: 1em;
-	margin-bottom: 1em;
 	color: var(--text-normal);
 }
 
-.cm-line .rv-paragraph {
-	display: inline;
-}
-
-/* Color picker widget */
+/* ── Color picker widget ── */
 .rv-color-picker-wrapper {
 	display: inline-flex;
 	align-items: center;
@@ -53,7 +37,7 @@
 	border-radius: 3px;
 }
 
-/* Override Obsidian's tag styling for colors in our blocks */
+/* Override Obsidian tag styling for hex colors in our blocks */
 .cm-line .rv-tag-override {
 	color: var(--text-normal) !important;
 	background: none !important;
@@ -61,3 +45,51 @@
 	border-radius: 0 !important;
 }
 
+/* ── Dash-level outliner ── */
+
+/* Bullet character styling */
+.rv-bullet {
+	color: var(--text-muted);
+	user-select: none;
+}
+.rv-bullet-1 { color: var(--text-normal); }
+.rv-bullet-2 { color: var(--text-muted); }
+.rv-bullet-3 { color: var(--text-faint); }
+
+/* Line-level indentation and guide lines */
+.rv-level {
+	position: relative;
+	transition: padding-left 0.15s ease, opacity 0.15s ease;
+}
+.rv-level-1 {
+	padding-left: 1.5em !important;
+}
+.rv-level-2 {
+	padding-left: 3em !important;
+	border-left: 2px solid var(--background-modifier-border);
+	margin-left: 0.7em;
+}
+.rv-level-3 {
+	padding-left: 4.5em !important;
+	border-left: 2px solid var(--background-modifier-border);
+	margin-left: 1.4em;
+	opacity: 0.85;
+}
+.rv-level-4 {
+	padding-left: 6em !important;
+	border-left: 2px solid var(--background-modifier-border);
+	margin-left: 2.1em;
+	opacity: 0.75;
+}
+.rv-level-5 {
+	padding-left: 7.5em !important;
+	border-left: 2px solid var(--background-modifier-border);
+	margin-left: 2.8em;
+	opacity: 0.65;
+}
+.rv-level-6 {
+	padding-left: 9em !important;
+	border-left: 2px solid var(--background-modifier-border);
+	margin-left: 3.5em;
+	opacity: 0.55;
+}

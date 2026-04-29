@@ -15,10 +15,19 @@ export interface RuleEntry {
   val: string;
   type: RuleType;
   section: "colors" | "text" | "default";
+  isLetterWrapper: boolean;
   startSym?: string;
   endSym?: string;
   valFrom: number;
   valTo: number;
+}
+
+export interface WrapperMatch {
+  rule: RuleEntry;
+  fullFrom: number;
+  fullTo: number;
+  contentFrom: number;
+  contentTo: number;
 }
 
 export interface ParseResult {
@@ -40,39 +49,41 @@ export function parseDeclarations(doc: Text): ParseResult {
 function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEntry>) {
   const startLine = doc.lineAt(block.from).number;
   const endLine = doc.lineAt(block.to).number;
-
   let currentSection: "colors" | "text" | "default" = "default";
 
   for (let lineNo = startLine + 1; lineNo <= endLine - 1; lineNo += 1) {
     const text = doc.line(lineNo).text.trim();
-    if (!text || text.startsWith("#")) continue;
+    if (!text) continue;
 
-    const lower = text.toLowerCase();
-    if (lower === "colors" || lower === "colour" || lower === "colours") {
-      currentSection = "colors";
+    if (text.startsWith("##")) {
+      const sectionName = text.slice(2).trim().toLowerCase();
+      if (sectionName === "colors" || sectionName === "colour" || sectionName === "colours") {
+        currentSection = "colors";
+      } else if (sectionName === "text") {
+        currentSection = "text";
+      }
       continue;
     }
-    if (lower === "text") {
-      currentSection = "text";
-      continue;
-    }
+
+    if (text.startsWith("#")) continue;
 
     const equalsIdx = text.indexOf("=");
     if (equalsIdx === -1) continue;
 
-    const keyRaw = text.slice(0, equalsIdx);
+    const key = text.slice(0, equalsIdx).trim();
     const valRaw = text.slice(equalsIdx + 1);
-
-    const key = keyRaw.trim();
     const val = valRaw.trim();
-    
     if (!key || !val) continue;
 
     const valStart = doc.line(lineNo).from + equalsIdx + 1 + valRaw.indexOf(val);
     const valEnd = valStart + val.length;
 
-    if (/^[A-Za-z0-9_-]+$/.test(key)) {
-      rules.set(key, { key, val, type: "css", section: currentSection, valFrom: valStart, valTo: valEnd });
+    if (/[_-]/.test(key) || /^\d+$/.test(key)) {
+      rules.set(key, { key, val, type: "css", section: currentSection, isLetterWrapper: false, valFrom: valStart, valTo: valEnd });
+    } else if (/^[A-Za-z]{2,}$/.test(key)) {
+      rules.set(key, { key, val, type: "wrapper", section: currentSection, isLetterWrapper: true, startSym: key, endSym: key, valFrom: valStart, valTo: valEnd });
+    } else if (/^[A-Za-z0-9]+$/.test(key)) {
+      rules.set(key, { key, val, type: "css", section: currentSection, isLetterWrapper: false, valFrom: valStart, valTo: valEnd });
     } else {
       let startSym = key;
       let endSym = key;
@@ -80,9 +91,76 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
         startSym = key.charAt(0);
         endSym = key.charAt(1);
       }
-      rules.set(key, { key, val, type: "wrapper", section: currentSection, startSym, endSym, valFrom: valStart, valTo: valEnd });
+      rules.set(key, { key, val, type: "wrapper", section: currentSection, isLetterWrapper: false, startSym, endSym, valFrom: valStart, valTo: valEnd });
     }
   }
+}
+
+export function findWrapperMatchesInText(text: string, lineFrom: number, wrappers: RuleEntry[]): WrapperMatch[] {
+  const results: WrapperMatch[] = [];
+  const usedRanges: Array<[number, number]> = [];
+
+  for (const rule of wrappers) {
+    let searchFrom = 0;
+    while (searchFrom < text.length) {
+      const match = rule.isLetterWrapper
+        ? findLetterMatch(text, searchFrom, rule)
+        : findSymbolMatch(text, searchFrom, rule);
+
+      if (!match) break;
+      if (usedRanges.some(([a, b]) => match.startIdx < b && match.endIdx > a)) {
+        searchFrom = match.startIdx + 1;
+        continue;
+      }
+      usedRanges.push([match.startIdx, match.endIdx]);
+      results.push({
+        rule,
+        fullFrom: lineFrom + match.startIdx,
+        fullTo: lineFrom + match.endIdx,
+        contentFrom: lineFrom + match.contentStart,
+        contentTo: lineFrom + match.contentEnd
+      });
+      searchFrom = match.endIdx;
+    }
+  }
+
+  results.sort((a, b) => a.fullFrom - b.fullFrom);
+  return results;
+}
+
+function findSymbolMatch(text: string, from: number, rule: RuleEntry) {
+  const startSym = rule.startSym!;
+  const endSym = rule.endSym!;
+  const startIdx = text.indexOf(startSym, from);
+  if (startIdx === -1) return null;
+  const contentStart = startIdx + startSym.length;
+  const endIdx = text.indexOf(endSym, contentStart);
+  if (endIdx === -1) return null;
+  return { startIdx, endIdx: endIdx + endSym.length, contentStart, contentEnd: endIdx };
+}
+
+function findLetterMatch(text: string, from: number, rule: RuleEntry) {
+  const key = rule.key;
+  let pos = from;
+  while (pos < text.length) {
+    const startIdx = text.indexOf(key, pos);
+    if (startIdx === -1) return null;
+
+    if (startIdx > 0 && text.charAt(startIdx - 1) !== " ") { pos = startIdx + 1; continue; }
+    const afterKey = startIdx + key.length;
+    if (afterKey >= text.length || text.charAt(afterKey) !== " ") { pos = startIdx + 1; continue; }
+
+    const contentStart = afterKey + 1;
+    const endMarker = " " + key;
+    const endIdx = text.indexOf(endMarker, contentStart);
+    if (endIdx === -1) return null;
+
+    const fullEnd = endIdx + endMarker.length;
+    if (fullEnd < text.length && text.charAt(fullEnd) !== " ") { pos = startIdx + 1; continue; }
+
+    return { startIdx, endIdx: fullEnd, contentStart, contentEnd: endIdx };
+  }
+  return null;
 }
 
 function findDeclarationBlocks(doc: Text): DeclBlockRange[] {
@@ -92,11 +170,7 @@ function findDeclarationBlocks(doc: Text): DeclBlockRange[] {
     for (let lineNo = 2; lineNo <= doc.lines; lineNo += 1) {
       const lineText = doc.line(lineNo).text.trim();
       if (lineText === "---" || lineText === "...") {
-        blocks.push({
-          from: doc.line(1).from,
-          to: doc.line(lineNo).to,
-          source: "frontmatter"
-        });
+        blocks.push({ from: doc.line(1).from, to: doc.line(lineNo).to, source: "frontmatter" });
         break;
       }
     }
@@ -106,13 +180,8 @@ function findDeclarationBlocks(doc: Text): DeclBlockRange[] {
     const lineText = doc.line(lineNo).text.trim();
     if (lineText === ":::vars") {
       for (let endLine = lineNo + 1; endLine <= doc.lines; endLine += 1) {
-        const endText = doc.line(endLine).text.trim();
-        if (endText === ":::") {
-          blocks.push({
-            from: doc.line(lineNo).from,
-            to: doc.line(endLine).to,
-            source: "vars-block"
-          });
+        if (doc.line(endLine).text.trim() === ":::") {
+          blocks.push({ from: doc.line(lineNo).from, to: doc.line(endLine).to, source: "vars-block" });
           lineNo = endLine;
           break;
         }
@@ -127,4 +196,10 @@ export function isColorString(val: string): boolean {
   return /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(val) ||
          /^rgba?\([^)]+\)$/i.test(val) ||
          /^hsla?\([^)]+\)$/i.test(val);
+}
+
+export function parseDashLevel(lineText: string): number {
+  const match = /^(-{1,6})\s+\S/.exec(lineText);
+  if (!match || !match[1]) return 0;
+  return match[1].length;
 }
