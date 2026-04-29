@@ -1,90 +1,64 @@
-# Obsidian Sample Plugin
+# Concrete Extension
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+A lightweight and highly customizable text styling and color highlighting system for Obsidian. 
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+This plugin allows you to define custom text wrappers, inline styles, and CSS variables directly within your notes using a simple, readable syntax. It completely bypasses complex settings menus, letting you control your document's aesthetics right from the editor!
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Features
 
-## First time developing plugins?
+- **Custom Text Wrappers**: Turn `(any text)` red, `"any text"` blue, or `^^any text^^` into a bold header just by defining a simple rule.
+- **Interactive Color Palette**: Any hex color you define gets an interactive color swatch right inside the editor! Clicking it opens your system color picker, allowing you to tweak colors on the fly.
+- **Live Preview & Reading View Support**: Your custom styles are rendered beautifully in both Live Preview and Reading View.
+- **CSS Variables Injection**: Define CSS variables directly in your notes (like `header_size = 24`) that you can use in custom CSS snippets.
+- **Tag Override**: The plugin automatically prevents Obsidian from incorrectly rendering your hex color codes as clickable tags.
 
-Quick starting guide for new plugin devs:
+## How to Use
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+To define your styling rules, create a `:::vars` code block anywhere in your note (or use the YAML frontmatter).
 
-## Releasing new releases
+The block is divided into two optional sections: `colors` (or `colour`/`colours`) and `text`.
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Example Configuration
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+```yaml
+:::vars
+colors
+() = #ef4444
+"" = #3b82f6
 
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+text
+header_size = 24
+paragraph_size = 14
+^^ = header
+.. = paragraph
+:::
 ```
 
-If you have multiple URLs, you can also do:
+### The `colors` Section
+Rules placed under the `colors` category will treat their values as colors. 
+For example, `() = #ef4444` means: "Find any text wrapped in `()` and color it `#ef4444`".
+- In the editor, a small, clickable color swatch will appear next to `#ef4444`. You can click this swatch to open a color picker and interactively change the color!
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+### The `text` Section
+Rules placed under the `text` category will treat their values as styling classes.
+- **Wrappers**: `^^ = header` means: "Find any text wrapped in `^^` and apply the `.rv-header` CSS class to it."
+- **Variables**: `header_size = 24` is an alphanumeric key. Because it doesn't represent a text wrapper, the plugin automatically exports it as a CSS variable `--header_size: 24px` to the document, which the `.rv-header` class uses to scale your text!
 
-## API Documentation
+### Wrapper Syntax Rules
+The plugin intelligently identifies your wrapper boundaries based on the characters you provide:
+- **Asymmetrical Wrappers (e.g., `()` or `[]` or `<>`)**: The plugin uses the first character as the start boundary and the second character as the end boundary. E.g., `(Text goes here)`.
+- **Symmetrical Wrappers (e.g., `""` or `^^` or `;;`)**: If you provide two identical characters, the plugin will use that character as both the start and end boundary. E.g., `"Text goes here"` or `^Text goes here^`.
 
-See https://docs.obsidian.md
+## Installation
+
+### Manual Installation
+1. Download the latest release from the Releases page.
+2. Extract `main.js`, `manifest.json`, and `styles.css` into your vault's plugins folder: `VaultFolder/.obsidian/plugins/concrete-extension/`.
+3. Reload Obsidian.
+4. Enable "Concrete Extension" in your Community Plugins settings.
+
+### Development
+1. Clone this repository into your `.obsidian/plugins/` folder.
+2. Run `npm install` to install dependencies.
+3. Run `npm run dev` to compile the plugin and watch for changes.
+4. (Optional) Run `npm run lint` to check for style errors.
