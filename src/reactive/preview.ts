@@ -1,5 +1,5 @@
 import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
-import { Text } from "@codemirror/state";
+import { Text as CmText } from "@codemirror/state";
 import { buildVarsMap, parseDeclarations, resolveDeclarations, VarEntry } from "./engine";
 import { applyCssVarsToElement } from "./utils";
 
@@ -11,13 +11,13 @@ export function createPreviewProcessor(app: App) {
     }
 
     const content = await app.vault.cachedRead(file);
-    const doc = Text.of(content.split("\n"));
+    const doc = CmText.of(content.split("\n"));
     const parseResult = parseDeclarations(doc);
     const resolveResult = resolveDeclarations(parseResult.decls);
     const vars = buildVarsMap(resolveResult.resolved, new Map());
 
-    const container = el.closest(".markdown-preview-view") as HTMLElement | null;
-    if (container) {
+    const container = el.closest(".markdown-preview-view");
+    if (container instanceof HTMLElement) {
       applyCssVarsToElement(container, vars);
     }
 
@@ -100,12 +100,18 @@ function nextFunctionMatch(text: string, start: number) {
     return null;
   }
 
+  const textValue = match[1];
+  const name = match[2];
+  if (textValue == null || name == null) {
+    return null;
+  }
+
   return {
     kind: "func" as const,
     index: match.index,
     length: match[0].length,
-    text: match[1],
-    name: match[2]
+    text: textValue,
+    name
   };
 }
 
@@ -117,11 +123,16 @@ function nextVarMatch(text: string, start: number) {
     return null;
   }
 
+  const name = match[1];
+  if (name == null) {
+    return null;
+  }
+
   return {
     kind: "var" as const,
     index: match.index,
     length: match[0].length,
-    name: match[1]
+    name
   };
 }
 

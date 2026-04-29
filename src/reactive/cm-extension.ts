@@ -22,6 +22,7 @@ import {
 } from "@codemirror/autocomplete";
 import { linter, Diagnostic } from "@codemirror/lint";
 import { syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
 import {
   buildVarsMap,
   DeclBlockRange,
@@ -480,7 +481,11 @@ function findLineRefs(
     const from = line.from + match.index;
     const to = from + match[0].length;
     if (!isInCode(state, from)) {
-      refs.push({ name: match[2], from, to, kind: "func" });
+      const name = match[2];
+      if (name == null) {
+        continue;
+      }
+      refs.push({ name, from, to, kind: "func" });
       usedRanges.push([from, to]);
     }
   }
@@ -493,7 +498,11 @@ function findLineRefs(
       continue;
     }
     if (!isInCode(state, from)) {
-      refs.push({ name: match[1], from, to, kind: "ref" });
+      const name = match[1];
+      if (name == null) {
+        continue;
+      }
+      refs.push({ name, from, to, kind: "ref" });
     }
   }
 
@@ -549,9 +558,13 @@ function buildLineDecorations(
     }
 
     const name = match[2];
+    const label = match[1];
+    if (name == null || label == null) {
+      continue;
+    }
     const entry = varState.vars.get(name);
     const color = entry && entry.type === "color" ? String(entry.val) : undefined;
-    const widget = new StyledTextWidget(match[1], color, !color);
+    const widget = new StyledTextWidget(label, color, !color);
     decorations.push({
       from,
       to,
@@ -572,6 +585,9 @@ function buildLineDecorations(
     }
 
     const name = match[1];
+    if (name == null) {
+      continue;
+    }
     const entry = varState.vars.get(name);
     const widget = new VarValueWidget(name, entry);
     decorations.push({
@@ -622,7 +638,11 @@ function findVarAtPos(
       if (isInCode(state, from)) {
         return null;
       }
-      return { name: match[1], from, to };
+      const name = match[1];
+      if (name == null) {
+        return null;
+      }
+      return { name, from, to };
     }
   }
 
@@ -670,7 +690,7 @@ function isInDeclBlock(pos: number, blocks: DeclBlockRange[]): boolean {
 }
 
 function isInCode(state: EditorState, pos: number): boolean {
-  let node = syntaxTree(state).resolveInner(pos, -1);
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
   while (node) {
     if (CODE_NODE_NAMES.has(node.name)) {
       return true;

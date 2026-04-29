@@ -12,6 +12,9 @@ const COLOR_HSL = /^hsla?\(\s*[\d.]+\s*,\s*[\d.]+%\s*,\s*[\d.]+%(?:\s*,\s*[\d.]+
 
 const NUMBER_REGEX = /^[+-]?\d+(?:\.\d+)?$/;
 
+if (!all) {
+  throw new Error("mathjs factory bundle unavailable");
+}
 const math = create(all, {});
 math.import(
   {
@@ -238,7 +241,7 @@ export function resolveDeclarations(decls: Map<string, RawDecl>): {
       } else {
         const expr = raw.replace(VAR_REF_REGEX, (_, refName) => refName);
         try {
-          const out = math.evaluate(expr, scope);
+          const out: unknown = math.evaluate(expr, scope);
           if (typeof out === "number") {
             res = {
               name,
@@ -264,7 +267,7 @@ export function resolveDeclarations(decls: Map<string, RawDecl>): {
               deps: uniqueRefs
             };
           }
-        } catch (err) {
+        } catch {
           const message = `Invalid expression for @${name}`;
           pushError(decl, message);
           res = {
@@ -311,7 +314,10 @@ export function extractVarRefs(raw: string): string[] {
   const regex = /@([A-Za-z_][A-Za-z0-9_]*)/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(raw))) {
-    refs.push(match[1]);
+    const name = match[1];
+    if (name != null) {
+      refs.push(name);
+    }
   }
   return refs;
 }
@@ -360,7 +366,11 @@ function parseBlock(
     }
 
     const name = match[2];
-    const raw = match[3].trim();
+    const rawValue = match[3];
+    if (name == null || rawValue == null) {
+      continue;
+    }
+    const raw = rawValue.trim();
     if (!raw) {
       errors.push({
         message: `Missing value for @${name}`,
