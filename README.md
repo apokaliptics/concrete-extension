@@ -9,6 +9,8 @@ Define custom text wrappers, inline color styles, CSS variables, and dash-based 
 - **Custom text wrappers** — Turn `(text)` red, `"text"` blue, or `^text^` into a bold header by defining a simple rule.
 - **Letter wrappers** — Use letter pairs like `hh text hh` for highlighting. The letters must be grouped together and spaced from the content to avoid false matches with normal words.
 - **Delimiter hiding** — Wrapper symbols are hidden in the rendered view. You only see the styled content; click into the line to reveal the raw syntax.
+- **Nested Wrappers** — Apply multiple styles to the same text by nesting them seamlessly (e.g., `_&text&_`).
+- **Combined Styles** — Reuse the same wrapper symbol across different sections to stack multiple effects simultaneously (e.g., apply a color *and* a massive header size with a single wrapper!).
 - **Interactive color palette** — Every hex color you define gets a clickable swatch in the editor. Click it to open the system color picker and update the color inline.
 - **CSS variable injection** — Keys like `header_size = 24` become `--header_size: 24px` CSS variables you can use in custom snippets.
 - **Dash-level outliner** — Lines starting with `-`, `--`, `---` etc. become indented outline levels with aesthetic bullets, guide lines, and fading opacity.
@@ -21,18 +23,22 @@ Define custom text wrappers, inline color styles, CSS variables, and dash-based 
 
 Place this block anywhere in your note. It defines all your styling rules.
 
-```
+```yaml
 :::vars
 ##colors
 () = #ef4444
 "" = #3b82f6
 hh = #10b981
+&& = #8b5cf6
 
 ##text
-header_size = 24
+header_size = 32
 paragraph_size = 14
+
 ^^ = header
 .. = paragraph
+__ = underline
+&& = bold
 :::
 ```
 
@@ -64,7 +70,62 @@ Then use them in your note:
 
 **Result:** The wrapper symbols `(`, `)`, `"`, `"` are hidden. You only see the styled text.
 
-### 4. Letter wrappers
+### 4. Text wrappers (under `##text`)
+
+Define wrappers that apply CSS classes instead of colors.
+
+```
+##text
+^^ = header
+__ = underline
+```
+
+Usage:
+
+```
+^This becomes a header^
+_This becomes underlined_
+```
+
+**Built-in Styles**
+The plugin ships with several out-of-the-box styles you can use immediately under `##text`:
+
+| Class | Effect |
+|---|---|
+| `header` | Bold text, sized by `--header_size` (default `1.5em`) |
+| `paragraph` | Normal text, sized by `--paragraph_size` (default `1em`) |
+| `bold` | **Bold** text |
+| `italic` | *Italic* text |
+| `underline` | <ins>Underlined</ins> text |
+| `strikethrough` | ~~Strikethrough~~ text |
+| `highlight` | Applies a background highlight color |
+
+*(You can define any other value and style it yourself with a CSS snippet targeting `.rv-{value}`)*
+
+### 5. Advanced: Nested & Combined Wrappers
+
+**Nesting Wrappers:**
+You can combine multiple text wrappers by nesting them inside each other!
+```
+_&This text is bold and underlined!&_
+```
+
+**Combining Styles:**
+If you want a single wrapper to do multiple things, just define it in **both** sections! 
+
+```yaml
+:::vars
+##colors
+&& = #ff0000
+
+##text
+&& = header
+header_size = 70
+:::
+```
+Now, writing `&Huge red header!&` will automatically apply the color `#ff0000` **and** the massive `header` size simultaneously.
+
+### 6. Letter wrappers
 
 You can also use letter pairs as wrappers. They **must be spaced** from the content:
 
@@ -81,33 +142,7 @@ hh This text will be green hh
 
 > **Why spaces?** To prevent false matches with normal words that happen to start and end with the same letter. `hh text hh` matches, but `hello` does not.
 
-### 5. Text wrappers (under `##text`)
-
-Define wrappers that apply CSS classes instead of colors.
-
-```
-##text
-^^ = header
-.. = paragraph
-```
-
-Usage:
-
-```
-^This becomes a header^
-.This becomes a paragraph.
-```
-
-The plugin ships with built-in styles for `header` and `paragraph`:
-
-| Class | Effect |
-|---|---|
-| `.rv-header` | Bold text, sized by `--header_size` (default `1.5em`) |
-| `.rv-paragraph` | Normal text, sized by `--paragraph_size` (default `1em`) |
-
-You can define any value and style it with a CSS snippet targeting `.rv-{value}`.
-
-### 6. CSS variables
+### 7. CSS variables
 
 Alphanumeric keys with underscores or hyphens become CSS variables:
 
@@ -118,7 +153,7 @@ paragraph_size = 14
 
 These become `--header_size: 24px` and `--paragraph_size: 14px` on the document container. The built-in `.rv-header` and `.rv-paragraph` classes reference these variables.
 
-### 7. Dash-level outliner
+### 8. Dash-level outliner
 
 Start any line with one or more dashes followed by a space to create outline levels:
 
@@ -136,7 +171,7 @@ Start any line with one or more dashes followed by a space to create outline lev
 - Deeper levels automatically fade in opacity for visual hierarchy.
 - **Ghost dash effect:** Click into a line to reveal the raw dashes for editing. Move away and the bullets return.
 
-### 8. Wrapper syntax rules
+### 9. Wrapper syntax rules
 
 | Key | Type | Start | End | Example |
 |---|---|---|---|---|
@@ -149,7 +184,7 @@ Start any line with one or more dashes followed by a space to create outline lev
 **Symmetric** (2 same chars): that char = both start and end.
 **Letters** (2+ letters): the full key is used, must be surrounded by spaces.
 
-### 9. Interactive color picker
+### 10. Interactive color picker
 
 In the editor, every hex color value in your `:::vars` block gets a small color swatch next to it. Click the swatch to open your system's native color picker — changing the color automatically updates the hex code in your note.
 
