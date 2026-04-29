@@ -85,6 +85,7 @@ const foldStateField = StateField.define<RangeSet<FoldMarker>>({
       if (e.is(toggleFoldEffect)) {
         if (e.value.fold) {
           value = value.update({
+            filter: (from) => from !== e.value.from,
             add: [{ from: e.value.from, to: e.value.from, value: new FoldMarker() }]
           });
         } else {
@@ -219,6 +220,10 @@ class ColorSwatchWidget extends WidgetType {
     return other.color === this.color && other.from === this.from && other.to === this.to;
   }
 
+  ignoreEvent() {
+    return true;
+  }
+
   toDOM(view: EditorView) {
     const wrapper = document.createElement("span");
     wrapper.className = "rv-color-picker-wrapper";
@@ -232,6 +237,11 @@ class ColorSwatchWidget extends WidgetType {
     }
     input.value = hexColor;
     input.className = "rv-color-picker";
+    
+    const stopEvent = (e: Event) => e.stopPropagation();
+    input.onmousedown = stopEvent;
+    input.onclick = stopEvent;
+
     input.onchange = () => {
       view.dispatch({
         changes: { from: this.from, to: this.to, insert: input.value }
@@ -271,16 +281,26 @@ class FoldWidget extends WidgetType {
     return other.text === this.text && other.isFolded === this.isFolded && other.blockFrom === this.blockFrom;
   }
 
+  ignoreEvent() {
+    return true;
+  }
+
   toDOM(view: EditorView) {
     const span = document.createElement("span");
     span.className = "rv-fold-widget";
     span.textContent = this.isFolded ? `▶ [${this.text}]` : `▼`;
-    span.onclick = (e) => {
+    
+    const handler = (e: Event) => {
       e.preventDefault();
+      e.stopPropagation();
       view.dispatch({
         effects: toggleFoldEffect.of({ from: this.blockFrom, fold: !this.isFolded })
       });
     };
+    
+    span.onmousedown = handler;
+    span.onclick = handler;
+    
     return span;
   }
 }
