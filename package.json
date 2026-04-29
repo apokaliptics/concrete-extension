@@ -3,22 +3,33 @@
   "version": "0.1.0",
   "description": "Reactive variable system for Markdown notes.",
   "main": "main.js",
+  "type": "module",
   "scripts": {
-    "dev": "node esbuild.config.mjs dev",
-    "build": "node esbuild.config.mjs production",
-    "version": "node esbuild.config.mjs production"
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git add manifest.json versions.json",
+    "lint": "eslint ."
+  },
+  "keywords": [],
+  "license": "0-BSD",
+  "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/lint": "^6.9.5",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
+    "@types/node": "^16.11.6",
+    "esbuild": "0.25.5",
+    "eslint-plugin-obsidianmd": "0.1.9",
+    "globals": "14.0.0",
+    "tslib": "2.4.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "8.35.1",
+    "@eslint/js": "9.30.1",
+    "jiti": "2.6.1"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "^6.18.0",
-    "@codemirror/language": "^6.10.2",
-    "@codemirror/lint": "^6.7.1",
-    "@codemirror/state": "6.5.0",
-    "@codemirror/view": "^6.26.2",
-    "mathjs": "^12.4.1"
-  },
-  "devDependencies": {
-    "esbuild": "^0.23.0",
-    "obsidian": "^1.12.3",
-    "typescript": "^5.5.4"
+    "mathjs": "^12.4.1",
+    "obsidian": "latest"
   }
 }
