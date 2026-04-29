@@ -57,33 +57,40 @@ function renderTextNode(text: string, wrappers: RuleEntry[]): DocumentFragment |
   const matches = findWrapperMatchesInText(text, 0, wrappers);
   if (matches.length === 0) return null;
 
-  const fragment = document.createDocumentFragment();
-  let index = 0;
+  return buildDOMTree(text, 0, text.length, matches);
+}
 
-  for (const m of matches) {
-    // Text before the match
-    if (m.fullFrom > index) {
-      fragment.appendChild(document.createTextNode(text.slice(index, m.fullFrom)));
+function buildDOMTree(text: string, from: number, to: number, matches: ReturnType<typeof findWrapperMatchesInText>): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  let index = from;
+
+  const innerMatches = matches.filter(m => m.fullFrom >= from && m.fullTo <= to);
+
+  while (index < to) {
+    const nextMatch = innerMatches.find(m => m.fullFrom >= index);
+    if (!nextMatch) {
+      fragment.appendChild(document.createTextNode(text.slice(index, to)));
+      break;
     }
 
-    // Content only (delimiters hidden)
-    const contentText = text.slice(m.contentFrom, m.contentTo);
+    if (nextMatch.fullFrom > index) {
+      fragment.appendChild(document.createTextNode(text.slice(index, nextMatch.fullFrom)));
+    }
+
     const span = document.createElement("span");
     span.className = "rv-styled";
-    span.textContent = contentText;
-
-    if (m.rule.section === "colors" || isColorString(m.rule.val)) {
-      span.style.color = m.rule.val;
+    
+    if (nextMatch.rule.section === "colors" || isColorString(nextMatch.rule.val)) {
+      span.style.color = nextMatch.rule.val;
     } else {
-      span.classList.add(`rv-${m.rule.val}`);
+      span.classList.add(`rv-${nextMatch.rule.val}`);
     }
 
+    const innerContent = buildDOMTree(text, nextMatch.contentFrom, nextMatch.contentTo, innerMatches);
+    span.appendChild(innerContent);
     fragment.appendChild(span);
-    index = m.fullTo;
-  }
 
-  if (index < text.length) {
-    fragment.appendChild(document.createTextNode(text.slice(index)));
+    index = nextMatch.fullTo;
   }
 
   return fragment;

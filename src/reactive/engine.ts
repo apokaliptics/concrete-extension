@@ -98,9 +98,11 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
 
 export function findWrapperMatchesInText(text: string, lineFrom: number, wrappers: RuleEntry[]): WrapperMatch[] {
   const results: WrapperMatch[] = [];
-  const usedRanges: Array<[number, number]> = [];
+  const usedDelimiters: Array<[number, number]> = [];
 
-  for (const rule of wrappers) {
+  const sortedWrappers = [...wrappers].sort((a, b) => (b.startSym?.length || 0) - (a.startSym?.length || 0));
+
+  for (const rule of sortedWrappers) {
     let searchFrom = 0;
     while (searchFrom < text.length) {
       const match = rule.isLetterWrapper
@@ -108,11 +110,21 @@ export function findWrapperMatchesInText(text: string, lineFrom: number, wrapper
         : findSymbolMatch(text, searchFrom, rule);
 
       if (!match) break;
-      if (usedRanges.some(([a, b]) => match.startIdx < b && match.endIdx > a)) {
+      
+      const startDelim: [number, number] = [match.startIdx, match.contentStart];
+      const endDelim: [number, number] = [match.contentEnd, match.endIdx];
+      
+      const overlaps = usedDelimiters.some(([a, b]) => 
+        (startDelim[0] < b && startDelim[1] > a) || 
+        (endDelim[0] < b && endDelim[1] > a)
+      );
+
+      if (overlaps) {
         searchFrom = match.startIdx + 1;
         continue;
       }
-      usedRanges.push([match.startIdx, match.endIdx]);
+      
+      usedDelimiters.push(startDelim, endDelim);
       results.push({
         rule,
         fullFrom: lineFrom + match.startIdx,
