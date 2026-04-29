@@ -2,9 +2,7 @@ import {
   EditorState,
   Extension,
   StateEffect,
-  StateField,
-  RangeSet,
-  RangeValue
+  StateField
 } from "@codemirror/state";
 import {
   Decoration,
@@ -27,6 +25,8 @@ import {
 import { applyCssVarsToElement } from "./utils";
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "CodeBlock", "InlineCode"]);
+
+/* ── State ── */
 
 interface VarState {
   rules: Map<string, RuleEntry>;
@@ -72,27 +72,25 @@ const varStateField = StateField.define<VarState>({
   }
 });
 
-class FoldMarker extends RangeValue {}
-const toggleFoldEffect = StateEffect.define<{from: number, fold: boolean}>();
+// Simple set of folded block line numbers (line of :::vars)
+const toggleFoldEffect = StateEffect.define<number>();
 
-const foldStateField = StateField.define<RangeSet<FoldMarker>>({
+const foldedSetField = StateField.define<Set<number>>({
   create() {
-    return RangeSet.empty;
+    return new Set();
   },
   update(value, tr) {
-    value = value.map(tr.changes);
+    // On doc change, just keep the set as-is (line numbers are stable enough
+    // for toggle; we re-resolve against blocks in buildDecorations)
     for (const e of tr.effects) {
       if (e.is(toggleFoldEffect)) {
-        if (e.value.fold) {
-          value = value.update({
-            filter: (from) => from !== e.value.from,
-            add: [{ from: e.value.from, to: e.value.from, value: new FoldMarker() }]
-          });
+        const next = new Set(value);
+        if (next.has(e.value)) {
+          next.delete(e.value);
         } else {
-          value = value.update({
-            filter: (from) => from !== e.value.from
-          });
+          next.add(e.value);
         }
+        return next;
       }
     }
     return value;
@@ -102,12 +100,14 @@ const foldStateField = StateField.define<RangeSet<FoldMarker>>({
 export function reactiveVariablesExtension(): Extension {
   return [
     varStateField,
-    foldStateField,
+    foldedSetField,
     decorationPlugin,
     cssVarPlugin,
     debouncedReparsePlugin
   ];
 }
+
+/* ── Plugins ── */
 
 const decorationPlugin = ViewPlugin.fromClass(
   class {
@@ -118,19 +118,13 @@ const decorationPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      const hasReparse = update.transactions.some((tr) =>
-        tr.effects.some((effect) => effect.is(reparseEffect))
-      );
-      const hasFoldToggle = update.transactions.some((tr) =>
-        tr.effects.some((effect) => effect.is(toggleFoldEffect))
-      );
-
       if (
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
-        hasReparse ||
-        hasFoldToggle
+        update.transactions.some((tr) =>
+          tr.effects.some((e) => e.is(reparseEffect) || e.is(toggleFoldEffect))
+        )
       ) {
         this.decorations = buildDecorations(update.view);
       }
@@ -161,9 +155,7 @@ const cssVarPlugin = ViewPlugin.fromClass(
       const varState = state.field(varStateField);
       const container =
         this.view.dom.closest(".markdown-source-view") ?? this.view.dom;
-      if (!container) {
-        return;
-      }
+      if (!container) return;
 
       this.lastKeys = applyCssVarsToElement(
         container as HTMLElement,
@@ -180,18 +172,12 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
     private timer: number | null = null;
 
     update(update: ViewUpdate) {
-      if (!update.docChanged) {
-        return;
-      }
+      if (!update.docChanged) return;
 
       const varState = update.startState.field(varStateField);
-      if (!shouldReparse(update, varState.blocks)) {
-        return;
-      }
+      if (!shouldReparse(update, varState.blocks)) return;
 
-      if (this.timer) {
-        window.clearTimeout(this.timer);
-      }
+      if (this.timer) window.clearTimeout(this.timer);
 
       this.timer = window.setTimeout(() => {
         const { rules, blocks } = parseDeclarations(update.state.doc);
@@ -202,9 +188,7 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
     }
 
     destroy() {
-      if (this.timer) {
-        window.clearTimeout(this.timer);
-      }
+      if (this.timer) window.clearTimeout(this.timer);
     }
   }
 );
@@ -220,9 +204,7 @@ class ColorSwatchWidget extends WidgetType {
     return other.color === this.color && other.from === this.from && other.to === this.to;
   }
 
-  ignoreEvent() {
-    return true;
-  }
+  ignoreEvent() { return true; }
 
   toDOM(view: EditorView) {
     const wrapper = document.createElement("span");
@@ -237,11 +219,10 @@ class ColorSwatchWidget extends WidgetType {
     }
     input.value = hexColor;
     input.className = "rv-color-picker";
-    
-    const stopEvent = (e: Event) => e.stopPropagation();
-    input.onmousedown = stopEvent;
-    input.onclick = stopEvent;
 
+    const stop = (e: Event) => e.stopPropagation();
+    input.onmousedown = stop;
+    input.onclick = stop;
     input.onchange = () => {
       view.dispatch({
         changes: { from: this.from, to: this.to, insert: input.value }
@@ -256,14 +237,8 @@ class ColorSwatchWidget extends WidgetType {
 const BULLET_CHARS = ["•", "◦", "▸", "▹", "⁃", "·"];
 
 class BulletWidget extends WidgetType {
-  constructor(public level: number) {
-    super();
-  }
-
-  eq(other: BulletWidget) {
-    return other.level === this.level;
-  }
-
+  constructor(public level: number) { super(); }
+  eq(other: BulletWidget) { return other.level === this.level; }
   toDOM() {
     const span = document.createElement("span");
     span.className = `rv-bullet rv-bullet-${this.level}`;
@@ -272,36 +247,56 @@ class BulletWidget extends WidgetType {
   }
 }
 
-class FoldWidget extends WidgetType {
-  constructor(public text: string, public blockFrom: number, public isFolded: boolean) {
+class FoldHeaderWidget extends WidgetType {
+  constructor(
+    public summary: string,
+    public blockLineNum: number,
+    public isFolded: boolean
+  ) {
     super();
   }
 
-  eq(other: FoldWidget) {
-    return other.text === this.text && other.isFolded === this.isFolded && other.blockFrom === this.blockFrom;
+  eq(other: FoldHeaderWidget) {
+    return other.summary === this.summary
+      && other.blockLineNum === this.blockLineNum
+      && other.isFolded === this.isFolded;
   }
 
-  ignoreEvent() {
-    return true;
-  }
+  ignoreEvent() { return true; }
 
   toDOM(view: EditorView) {
-    const span = document.createElement("span");
-    span.className = "rv-fold-widget";
-    span.textContent = this.isFolded ? `▶ [${this.text}]` : `▼`;
-    
+    const btn = document.createElement("span");
+    btn.className = "rv-fold-widget";
+    btn.textContent = this.isFolded
+      ? `▶ ${this.summary}`
+      : "▼";
+
     const handler = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
-      view.dispatch({
-        effects: toggleFoldEffect.of({ from: this.blockFrom, fold: !this.isFolded })
-      });
+
+      const effects: StateEffect<unknown>[] = [
+        toggleFoldEffect.of(this.blockLineNum)
+      ];
+
+      // When folding, move cursor to the :::vars line so it doesn't
+      // end up trapped inside the collapsed region
+      if (!this.isFolded) {
+        const line = view.state.doc.line(this.blockLineNum);
+        effects.push(
+          EditorView.scrollIntoView(line.from)
+        );
+        view.dispatch({
+          effects,
+          selection: { anchor: line.from }
+        });
+      } else {
+        view.dispatch({ effects });
+      }
     };
-    
-    span.onmousedown = handler;
-    span.onclick = handler;
-    
-    return span;
+
+    btn.onmousedown = handler;
+    return btn;
   }
 }
 
@@ -309,62 +304,61 @@ class FoldWidget extends WidgetType {
 
 function buildDecorations(view: EditorView): DecorationSet {
   const varState = view.state.field(varStateField);
+  const foldedSet = view.state.field(foldedSetField);
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const decorations: Array<{ from: number; to: number; value: Decoration }> = [];
-  
-  const foldState = view.state.field(foldStateField);
-  const foldedBlocks = new Set<number>();
-  foldState.between(0, view.state.doc.length, (from) => {
-    foldedBlocks.add(from);
-  });
 
-  const isPosFolded = (pos: number) => {
-    for (const block of varState.blocks) {
-      if (foldedBlocks.has(block.from)) {
-        const firstLineTo = view.state.doc.lineAt(block.from).to;
-        if (pos > firstLineTo && pos <= block.to) return true;
-      }
-    }
-    return false;
-  };
-
-  // Fold widgets
+  // Resolve which blocks are folded by matching line numbers
+  const foldedBlockRanges: DeclBlockRange[] = [];
   for (const block of varState.blocks) {
     if (block.source !== "vars-block") continue;
 
-    const isFolded = foldedBlocks.has(block.from);
+    const blockLine = view.state.doc.lineAt(block.from).number;
+    const isFolded = foldedSet.has(blockLine);
+
+    // Count rules in this block
     let colors = 0;
-    let textRules = 0;
+    let textStyles = 0;
     for (const rule of varState.rules.values()) {
       for (const style of rule.styles) {
         if (style.valFrom >= block.from && style.valTo <= block.to) {
           if (style.section === "colors") colors++;
-          else if (style.section === "text") textRules++;
+          else if (style.section === "text") textStyles++;
+          else colors++; // default section counts as color-like
         }
       }
     }
-    const text = `VARS: ${colors} colors, ${textRules} styles`;
 
+    const summary = `[VARS: ${colors} color${colors !== 1 ? "s" : ""}, ${textStyles} style${textStyles !== 1 ? "s" : ""}]`;
     const firstLine = view.state.doc.lineAt(block.from);
+
+    // Add the fold toggle widget at the end of the :::vars line
     decorations.push({
       from: firstLine.to,
       to: firstLine.to,
       value: Decoration.widget({
-        widget: new FoldWidget(text, block.from, isFolded),
+        widget: new FoldHeaderWidget(summary, blockLine, isFolded),
         side: 1
       })
     });
 
     if (isFolded) {
+      foldedBlockRanges.push(block);
+
+      // Hide everything from end of :::vars line to end of closing ::: line
+      const lastLine = view.state.doc.lineAt(block.to);
       decorations.push({
         from: firstLine.to,
-        to: block.to,
+        to: lastLine.to,
         value: Decoration.replace({})
       });
     }
   }
 
-  // Color swatches inside the :::vars block
+  const isPosFolded = (pos: number) =>
+    foldedBlockRanges.some(b => pos >= b.from && pos <= b.to);
+
+  // Color swatches inside un-folded :::vars blocks
   for (const rule of varState.rules.values()) {
     for (const style of rule.styles) {
       if (isPosFolded(style.valFrom)) continue;
@@ -387,6 +381,7 @@ function buildDecorations(view: EditorView): DecorationSet {
     }
   }
 
+  // Wrapper + dash-level decorations
   const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper");
 
   for (const range of view.visibleRanges) {
@@ -397,7 +392,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       const line = view.state.doc.line(lineNo);
       if (isInDeclBlock(line.from, varState.blocks)) continue;
 
-      // ── Dash-level decorations ──
+      // Dash-level decorations
       const dashLevel = parseDashLevel(line.text);
       if (dashLevel > 0) {
         decorations.push({
@@ -407,21 +402,16 @@ function buildDecorations(view: EditorView): DecorationSet {
         });
 
         if (lineNo !== activeLine) {
-          // Ghost dash: hide dashes + trailing space, replace with bullet
-          const dashEnd = line.from + dashLevel;
-          // Also skip the space after dashes
-          const replaceEnd = dashEnd + 1;
+          const replaceEnd = line.from + dashLevel + 1;
           decorations.push({
             from: line.from,
             to: replaceEnd,
-            value: Decoration.replace({
-              widget: new BulletWidget(dashLevel)
-            })
+            value: Decoration.replace({ widget: new BulletWidget(dashLevel) })
           });
         }
       }
 
-      // ── Wrapper decorations (skip active line) ──
+      // Wrapper decorations (skip active line)
       if (lineNo === activeLine) continue;
       if (wrappers.length === 0) continue;
 
@@ -430,14 +420,12 @@ function buildDecorations(view: EditorView): DecorationSet {
       for (const m of matches) {
         if (isInCode(view.state, m.fullFrom)) continue;
 
-        // Hide start delimiter
         decorations.push({
           from: m.fullFrom,
           to: m.contentFrom,
           value: Decoration.replace({})
         });
 
-        // Style the content
         let markClass = "rv-styled";
         let markAttrs: Record<string, string> | undefined;
 
@@ -459,7 +447,6 @@ function buildDecorations(view: EditorView): DecorationSet {
           })
         });
 
-        // Hide end delimiter
         decorations.push({
           from: m.contentTo,
           to: m.fullTo,
@@ -505,9 +492,7 @@ function isInDeclBlock(pos: number, blocks: DeclBlockRange[]): boolean {
 function isInCode(state: EditorState, pos: number): boolean {
   let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
   while (node) {
-    if (CODE_NODE_NAMES.has(node.name)) {
-      return true;
-    }
+    if (CODE_NODE_NAMES.has(node.name)) return true;
     node = node.parent;
   }
   return false;
