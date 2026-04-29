@@ -9,7 +9,8 @@ import {
   DecorationSet,
   EditorView,
   ViewPlugin,
-  ViewUpdate
+  ViewUpdate,
+  WidgetType
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
@@ -172,13 +173,65 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
   }
 );
 
+class ColorSwatchWidget extends WidgetType {
+  constructor(public color: string, public from: number, public to: number) {
+    super();
+  }
+
+  eq(other: ColorSwatchWidget) {
+    return other.color === this.color && other.from === this.from && other.to === this.to;
+  }
+
+  toDOM(view: EditorView) {
+    const wrapper = document.createElement("span");
+    wrapper.className = "rv-color-picker-wrapper";
+    
+    const input = document.createElement("input");
+    input.type = "color";
+    
+    let hexColor = this.color;
+    if (hexColor.length === 4) {
+      hexColor = '#' + hexColor[1] + hexColor[1] + hexColor[2] + hexColor[2] + hexColor[3] + hexColor[3];
+    }
+    input.value = hexColor;
+    
+    input.className = "rv-color-picker";
+    input.onchange = (e) => {
+      view.dispatch({
+        changes: { from: this.from, to: this.to, insert: input.value }
+      });
+    };
+    
+    wrapper.appendChild(input);
+    return wrapper;
+  }
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   const varState = view.state.field(varStateField);
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const decorations: Array<{ from: number; to: number; value: Decoration }> = [];
   
+  for (const rule of varState.rules.values()) {
+    if (rule.section === "colors" || isColorString(rule.val)) {
+      decorations.push({
+        from: rule.valFrom,
+        to: rule.valTo,
+        value: Decoration.mark({ class: "rv-tag-override" })
+      });
+      decorations.push({
+        from: rule.valFrom,
+        to: rule.valFrom,
+        value: Decoration.widget({
+          widget: new ColorSwatchWidget(rule.val, rule.valFrom, rule.valTo),
+          side: -1
+        })
+      });
+    }
+  }
+
   const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper");
-  if (wrappers.length === 0) return Decoration.none;
+  if (wrappers.length === 0 && decorations.length === 0) return Decoration.none;
 
   for (const range of view.visibleRanges) {
     const startLine = view.state.doc.lineAt(range.from).number;
@@ -219,14 +272,10 @@ function buildDecorations(view: EditorView): DecorationSet {
         
         if (!isInCode(view.state, from)) {
           let markDeco;
-          if (isColorString(bestMatch.rule.val)) {
+          if (bestMatch.rule.section === "colors" || isColorString(bestMatch.rule.val)) {
             markDeco = Decoration.mark({
               attributes: { style: `color: ${bestMatch.rule.val}` },
               class: "rv-styled"
-            });
-          } else if (bestMatch.rule.val === "header") {
-            markDeco = Decoration.mark({
-              class: "rv-styled rv-header"
             });
           } else {
             markDeco = Decoration.mark({

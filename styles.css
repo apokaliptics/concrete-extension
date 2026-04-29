@@ -16,3 +16,48 @@
 .cm-line .rv-header {
 	display: inline;
 }
+
+.rv-paragraph {
+	font-size: var(--paragraph_size, 1em);
+	display: block;
+	margin-top: 1em;
+	margin-bottom: 1em;
+	color: var(--text-normal);
+}
+
+.cm-line .rv-paragraph {
+	display: inline;
+}
+
+/* Color picker widget */
+.rv-color-picker-wrapper {
+	display: inline-flex;
+	align-items: center;
+	margin-right: 4px;
+	vertical-align: middle;
+}
+.rv-color-picker {
+	width: 1.2em;
+	height: 1.2em;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	background: none;
+}
+.rv-color-picker::-webkit-color-swatch-wrapper {
+	padding: 0;
+}
+.rv-color-picker::-webkit-color-swatch {
+	border: none;
+	border-radius: 3px;
+}
+
+/* Override Obsidian's tag styling for colors in our blocks */
+.cm-line .rv-tag-override {
+	color: var(--text-normal) !important;
+	background: none !important;
+	padding: 0 !important;
+	border-radius: 0 !important;
+}
+

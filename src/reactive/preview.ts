@@ -103,10 +103,8 @@ function createStyledSpan(text: string, rule: RuleEntry): HTMLElement {
   span.className = "rv-styled";
   span.textContent = text;
   
-  if (isColorString(rule.val)) {
+  if (rule.section === "colors" || isColorString(rule.val)) {
     span.style.color = rule.val;
-  } else if (rule.val === "header") {
-    span.classList.add("rv-header");
   } else {
     span.classList.add(`rv-${rule.val}`);
   }

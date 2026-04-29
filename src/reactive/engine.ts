@@ -14,8 +14,11 @@ export interface RuleEntry {
   key: string;
   val: string;
   type: RuleType;
+  section: "colors" | "text" | "default";
   startSym?: string;
   endSym?: string;
+  valFrom: number;
+  valTo: number;
 }
 
 export interface ParseResult {
@@ -38,26 +41,46 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
   const startLine = doc.lineAt(block.from).number;
   const endLine = doc.lineAt(block.to).number;
 
+  let currentSection: "colors" | "text" | "default" = "default";
+
   for (let lineNo = startLine + 1; lineNo <= endLine - 1; lineNo += 1) {
     const text = doc.line(lineNo).text.trim();
     if (!text || text.startsWith("#")) continue;
 
-    const match = /^(.+?)\s*=\s*(.+)$/.exec(text);
-    if (!match || !match[1] || !match[2]) continue;
+    const lower = text.toLowerCase();
+    if (lower === "colors" || lower === "colour" || lower === "colours") {
+      currentSection = "colors";
+      continue;
+    }
+    if (lower === "text") {
+      currentSection = "text";
+      continue;
+    }
 
-    const key = match[1].trim();
-    const val = match[2].trim();
+    const equalsIdx = text.indexOf("=");
+    if (equalsIdx === -1) continue;
+
+    const keyRaw = text.slice(0, equalsIdx);
+    const valRaw = text.slice(equalsIdx + 1);
+
+    const key = keyRaw.trim();
+    const val = valRaw.trim();
+    
+    if (!key || !val) continue;
+
+    const valStart = doc.line(lineNo).from + equalsIdx + 1 + valRaw.indexOf(val);
+    const valEnd = valStart + val.length;
 
     if (/^[A-Za-z0-9_-]+$/.test(key)) {
-      rules.set(key, { key, val, type: "css" });
+      rules.set(key, { key, val, type: "css", section: currentSection, valFrom: valStart, valTo: valEnd });
     } else {
       let startSym = key;
       let endSym = key;
-      if (key.length === 2 && key.charAt(0) !== key.charAt(1)) {
+      if (key.length === 2) {
         startSym = key.charAt(0);
         endSym = key.charAt(1);
       }
-      rules.set(key, { key, val, type: "wrapper", startSym, endSym });
+      rules.set(key, { key, val, type: "wrapper", section: currentSection, startSym, endSym, valFrom: valStart, valTo: valEnd });
     }
   }
 }
@@ -103,6 +126,5 @@ function findDeclarationBlocks(doc: Text): DeclBlockRange[] {
 export function isColorString(val: string): boolean {
   return /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(val) ||
          /^rgba?\([^)]+\)$/i.test(val) ||
-         /^hsla?\([^)]+\)$/i.test(val) ||
-         /^[A-Za-z]+$/.test(val);
+         /^hsla?\([^)]+\)$/i.test(val);
 }
