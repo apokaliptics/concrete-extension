@@ -1,6 +1,6 @@
 import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
 import { Text as CmText } from "@codemirror/state";
-import { buildVarsMap, parseDeclarations, resolveDeclarations, VarEntry } from "./engine";
+import { parseDeclarations, RuleEntry, isColorString } from "./engine";
 import { applyCssVarsToElement } from "./utils";
 
 export function createPreviewProcessor(app: App) {
@@ -12,30 +12,30 @@ export function createPreviewProcessor(app: App) {
 
     const content = await app.vault.cachedRead(file);
     const doc = CmText.of(content.split("\n"));
-    const parseResult = parseDeclarations(doc);
-    const resolveResult = resolveDeclarations(parseResult.decls);
-    const vars = buildVarsMap(resolveResult.resolved, new Map());
+    const { rules } = parseDeclarations(doc);
 
     const container = el.closest(".markdown-preview-view");
     if (container instanceof HTMLElement) {
-      applyCssVarsToElement(container, vars);
+      applyCssVarsToElement(container, rules);
     }
 
-    applyInlineSubstitutions(el, vars);
+    applyInlineSubstitutions(el, rules);
   };
 }
 
-function applyInlineSubstitutions(el: HTMLElement, vars: Map<string, VarEntry>) {
+function applyInlineSubstitutions(el: HTMLElement, rules: Map<string, RuleEntry>) {
+  const wrappers = Array.from(rules.values()).filter(r => r.type === "wrapper");
+  if (wrappers.length === 0) return;
+
   const nodes: Text[] = [];
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => {
-      if (!(node instanceof Text)) {
+      if (!(node instanceof Text) || !node.nodeValue) {
         return NodeFilter.FILTER_REJECT;
       }
-
-      if (!node.nodeValue || (!node.nodeValue.includes("@") && !node.nodeValue.includes("{"))) {
-        return NodeFilter.FILTER_REJECT;
-      }
+      
+      const hasSym = wrappers.some(w => node.nodeValue!.includes(w.startSym!));
+      if (!hasSym) return NodeFilter.FILTER_REJECT;
 
       if (isInCodeNode(node) || isInReactiveNode(node)) {
         return NodeFilter.FILTER_REJECT;
@@ -50,150 +50,67 @@ function applyInlineSubstitutions(el: HTMLElement, vars: Map<string, VarEntry>) 
   }
 
   for (const node of nodes) {
-    const fragment = renderTextNode(node.nodeValue ?? "", vars);
+    const fragment = renderTextNode(node.nodeValue ?? "", wrappers);
     if (fragment) {
       node.replaceWith(fragment);
     }
   }
 }
 
-function renderTextNode(text: string, vars: Map<string, VarEntry>): DocumentFragment | null {
+function renderTextNode(text: string, wrappers: RuleEntry[]): DocumentFragment | null {
   const fragment = document.createDocumentFragment();
   let index = 0;
   let changed = false;
 
   while (index < text.length) {
-    const funcMatch = nextFunctionMatch(text, index);
-    const varMatch = nextVarMatch(text, index);
-    const next = pickNextMatch(funcMatch, varMatch);
+    let bestMatch: { rule: RuleEntry, startIdx: number, endIdx: number } | null = null;
 
-    if (!next) {
+    for (const rule of wrappers) {
+      const startSym = rule.startSym!;
+      const endSym = rule.endSym!;
+
+      const startIdx = text.indexOf(startSym, index);
+      if (startIdx !== -1) {
+        const contentStart = startIdx + startSym.length;
+        const endIdx = text.indexOf(endSym, contentStart);
+        if (endIdx !== -1) {
+          if (!bestMatch || startIdx < bestMatch.startIdx) {
+            bestMatch = { rule, startIdx, endIdx: endIdx + endSym.length };
+          }
+        }
+      }
+    }
+
+    if (!bestMatch) {
       fragment.appendChild(document.createTextNode(text.slice(index)));
       break;
     }
 
-    if (next.index > index) {
-      fragment.appendChild(document.createTextNode(text.slice(index, next.index)));
+    if (bestMatch.startIdx > index) {
+      fragment.appendChild(document.createTextNode(text.slice(index, bestMatch.startIdx)));
     }
 
-    if (next.kind === "func") {
-      const varEntry = vars.get(next.name);
-      const color = varEntry && varEntry.type === "color" ? String(varEntry.val) : undefined;
-      fragment.appendChild(createStyledSpan(next.text, color, !color));
-    } else {
-      const varEntry = vars.get(next.name);
-      fragment.appendChild(createVarSpan(next.name, varEntry));
-    }
-
-    index = next.index + next.length;
+    fragment.appendChild(createStyledSpan(text.slice(bestMatch.startIdx, bestMatch.endIdx), bestMatch.rule));
+    index = bestMatch.endIdx;
     changed = true;
   }
 
   return changed ? fragment : null;
 }
 
-function nextFunctionMatch(text: string, start: number) {
-  const regex = /\(([^)]+)\)\{@([A-Za-z_][A-Za-z0-9_]*)\}/g;
-  regex.lastIndex = start;
-  const match = regex.exec(text);
-  if (!match) {
-    return null;
-  }
-
-  const textValue = match[1];
-  const name = match[2];
-  if (textValue == null || name == null) {
-    return null;
-  }
-
-  return {
-    kind: "func" as const,
-    index: match.index,
-    length: match[0].length,
-    text: textValue,
-    name
-  };
-}
-
-function nextVarMatch(text: string, start: number) {
-  const regex = /@([A-Za-z_][A-Za-z0-9_]*)/g;
-  regex.lastIndex = start;
-  const match = regex.exec(text);
-  if (!match) {
-    return null;
-  }
-
-  const name = match[1];
-  if (name == null) {
-    return null;
-  }
-
-  return {
-    kind: "var" as const,
-    index: match.index,
-    length: match[0].length,
-    name
-  };
-}
-
-function pickNextMatch(
-  funcMatch: ReturnType<typeof nextFunctionMatch>,
-  varMatch: ReturnType<typeof nextVarMatch>
-) {
-  if (!funcMatch && !varMatch) {
-    return null;
-  }
-  if (funcMatch && !varMatch) {
-    return funcMatch;
-  }
-  if (!funcMatch && varMatch) {
-    return varMatch;
-  }
-
-  if (funcMatch && varMatch) {
-    return funcMatch.index <= varMatch.index ? funcMatch : varMatch;
-  }
-
-  return null;
-}
-
-function createVarSpan(name: string, entry?: VarEntry): HTMLElement {
+function createStyledSpan(text: string, rule: RuleEntry): HTMLElement {
   const span = document.createElement("span");
-  span.className = "rv-var";
-
-  if (!entry || entry.type === "error") {
-    span.classList.add("rv-var--error");
-    span.textContent = `@${name}`;
-    return span;
-  }
-
-  const display = String(entry.val);
-  if (entry.type === "color") {
-    span.classList.add("rv-var--color");
-    const swatch = document.createElement("span");
-    swatch.className = "rv-swatch";
-    swatch.style.background = display;
-    const text = document.createElement("span");
-    text.textContent = display;
-    span.appendChild(swatch);
-    span.appendChild(text);
-    return span;
-  }
-
-  span.textContent = display;
-  return span;
-}
-
-function createStyledSpan(text: string, color?: string, hasError?: boolean): HTMLElement {
-  const span = document.createElement("span");
-  span.className = "rv-func";
+  span.className = "rv-styled";
   span.textContent = text;
-  if (color) {
-    span.style.color = color;
+  
+  if (isColorString(rule.val)) {
+    span.style.color = rule.val;
+  } else if (rule.val === "header") {
+    span.classList.add("rv-header");
+  } else {
+    span.classList.add(`rv-${rule.val}`);
   }
-  if (hasError) {
-    span.classList.add("rv-func--error");
-  }
+
   return span;
 }
 
@@ -211,7 +128,7 @@ function isInCodeNode(node: Node): boolean {
 function isInReactiveNode(node: Node): boolean {
   let el = node.parentElement;
   while (el) {
-    if (el.classList.contains("rv-var") || el.classList.contains("rv-func")) {
+    if (el.classList.contains("rv-styled")) {
       return true;
     }
     el = el.parentElement;

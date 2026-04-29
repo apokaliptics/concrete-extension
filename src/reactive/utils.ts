@@ -1,4 +1,4 @@
-import { VarEntry } from "./engine";
+import { RuleEntry } from "./engine";
 
 export function sanitizeCssVarName(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, "-");
@@ -6,17 +6,23 @@ export function sanitizeCssVarName(name: string): string {
 
 export function applyCssVarsToElement(
   el: HTMLElement,
-  vars: Map<string, VarEntry>,
+  rules: Map<string, RuleEntry>,
   prevKeys: string[] = []
 ): string[] {
   const newKeys: string[] = [];
-  for (const [name, entry] of vars) {
-    if (entry.type === "error") {
+  for (const [name, entry] of rules) {
+    if (entry.type !== "css") {
       continue;
     }
 
-    const cssName = `--user-var-${sanitizeCssVarName(name)}`;
-    el.style.setProperty(cssName, String(entry.val));
+    // Support optional "px" if value is numeric and name ends with _size
+    let val = entry.val;
+    if (/^[0-9]+$/.test(val) && (name.endsWith("size") || name.endsWith("Size"))) {
+        val += "px";
+    }
+
+    const cssName = `--${sanitizeCssVarName(name)}`;
+    el.style.setProperty(cssName, val);
     newKeys.push(cssName);
   }
 

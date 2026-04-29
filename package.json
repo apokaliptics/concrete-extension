@@ -30,7 +30,6 @@
     "jiti": "2.6.1"
   },
   "dependencies": {
-    "mathjs": "^12.4.1",
     "obsidian": "latest"
   }
 }
