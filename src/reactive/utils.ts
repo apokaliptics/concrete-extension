@@ -16,7 +16,10 @@ export function applyCssVarsToElement(
     }
 
     // Support optional "px" if value is numeric and name ends with _size
-    let val = entry.val;
+    const lastStyle = entry.styles[entry.styles.length - 1];
+    if (!lastStyle) continue;
+    
+    let val = lastStyle.val;
     if (/^[0-9]+$/.test(val) && (name.endsWith("size") || name.endsWith("Size"))) {
         val += "px";
     }

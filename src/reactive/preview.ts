@@ -80,10 +80,12 @@ function buildDOMTree(text: string, from: number, to: number, matches: ReturnTyp
     const span = document.createElement("span");
     span.className = "rv-styled";
     
-    if (nextMatch.rule.section === "colors" || isColorString(nextMatch.rule.val)) {
-      span.style.color = nextMatch.rule.val;
-    } else {
-      span.classList.add(`rv-${nextMatch.rule.val}`);
+    for (const style of nextMatch.rule.styles) {
+      if (style.section === "colors" || isColorString(style.val)) {
+        span.style.color = style.val;
+      } else {
+        span.classList.add(`rv-${style.val}`);
+      }
     }
 
     const innerContent = buildDOMTree(text, nextMatch.contentFrom, nextMatch.contentTo, innerMatches);

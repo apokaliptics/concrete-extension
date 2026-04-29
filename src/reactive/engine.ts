@@ -10,16 +10,20 @@ export interface DeclBlockRange {
 
 export type RuleType = "css" | "wrapper";
 
+export interface RuleStyle {
+  val: string;
+  section: "colors" | "text" | "default";
+  valFrom: number;
+  valTo: number;
+}
+
 export interface RuleEntry {
   key: string;
-  val: string;
   type: RuleType;
-  section: "colors" | "text" | "default";
   isLetterWrapper: boolean;
   startSym?: string;
   endSym?: string;
-  valFrom: number;
-  valTo: number;
+  styles: RuleStyle[];
 }
 
 export interface WrapperMatch {
@@ -78,12 +82,14 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
     const valStart = doc.line(lineNo).from + equalsIdx + 1 + valRaw.indexOf(val);
     const valEnd = valStart + val.length;
 
-    if (/[_-]/.test(key) || /^\d+$/.test(key)) {
-      rules.set(key, { key, val, type: "css", section: currentSection, isLetterWrapper: false, valFrom: valStart, valTo: valEnd });
+    const style: RuleStyle = { val, section: currentSection, valFrom: valStart, valTo: valEnd };
+
+    if (/[_-]/.test(key) || /^\d+$/.test(key) || (/^[A-Za-z0-9]+$/.test(key) && key.length !== 2)) {
+      if (!rules.has(key)) rules.set(key, { key, type: "css", isLetterWrapper: false, styles: [] });
+      rules.get(key)!.styles.push(style);
     } else if (/^[A-Za-z]{2,}$/.test(key)) {
-      rules.set(key, { key, val, type: "wrapper", section: currentSection, isLetterWrapper: true, startSym: key, endSym: key, valFrom: valStart, valTo: valEnd });
-    } else if (/^[A-Za-z0-9]+$/.test(key)) {
-      rules.set(key, { key, val, type: "css", section: currentSection, isLetterWrapper: false, valFrom: valStart, valTo: valEnd });
+      if (!rules.has(key)) rules.set(key, { key, type: "wrapper", isLetterWrapper: true, startSym: key, endSym: key, styles: [] });
+      rules.get(key)!.styles.push(style);
     } else {
       let startSym = key;
       let endSym = key;
@@ -91,7 +97,8 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
         startSym = key.charAt(0);
         endSym = key.charAt(1);
       }
-      rules.set(key, { key, val, type: "wrapper", section: currentSection, isLetterWrapper: false, startSym, endSym, valFrom: valStart, valTo: valEnd });
+      if (!rules.has(key)) rules.set(key, { key, type: "wrapper", isLetterWrapper: false, startSym, endSym, styles: [] });
+      rules.get(key)!.styles.push(style);
     }
   }
 }

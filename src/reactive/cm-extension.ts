@@ -238,20 +238,22 @@ function buildDecorations(view: EditorView): DecorationSet {
 
   // Color swatches inside the :::vars block
   for (const rule of varState.rules.values()) {
-    if (isColorString(rule.val)) {
-      decorations.push({
-        from: rule.valFrom,
-        to: rule.valTo,
-        value: Decoration.mark({ class: "rv-tag-override" })
-      });
-      decorations.push({
-        from: rule.valFrom,
-        to: rule.valFrom,
-        value: Decoration.widget({
-          widget: new ColorSwatchWidget(rule.val, rule.valFrom, rule.valTo),
-          side: -1
-        })
-      });
+    for (const style of rule.styles) {
+      if (isColorString(style.val)) {
+        decorations.push({
+          from: style.valFrom,
+          to: style.valTo,
+          value: Decoration.mark({ class: "rv-tag-override" })
+        });
+        decorations.push({
+          from: style.valFrom,
+          to: style.valFrom,
+          value: Decoration.widget({
+            widget: new ColorSwatchWidget(style.val, style.valFrom, style.valTo),
+            side: -1
+          })
+        });
+      }
     }
   }
 
@@ -306,14 +308,16 @@ function buildDecorations(view: EditorView): DecorationSet {
         });
 
         // Style the content
-        let markClass = "";
+        let markClass = "rv-styled";
         let markAttrs: Record<string, string> | undefined;
 
-        if (m.rule.section === "colors" || isColorString(m.rule.val)) {
-          markAttrs = { style: `color: ${m.rule.val}` };
-          markClass = "rv-styled";
-        } else {
-          markClass = `rv-styled rv-${m.rule.val}`;
+        for (const style of m.rule.styles) {
+          if (style.section === "colors" || isColorString(style.val)) {
+            if (!markAttrs) markAttrs = {};
+            markAttrs.style = (markAttrs.style || "") + `color: ${style.val};`;
+          } else {
+            markClass += ` rv-${style.val}`;
+          }
         }
 
         decorations.push({
