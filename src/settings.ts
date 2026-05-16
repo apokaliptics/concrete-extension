@@ -4,11 +4,17 @@ import ReactiveVariablesPlugin from "./main";
 export interface ReactiveVariablesSettings {
 	enableEditor: boolean;
 	enablePreview: boolean;
+	enableBulletPoints: boolean;
+	enableColorVariables: boolean;
+	enableTextVariables: boolean;
 }
 
 export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
 	enableEditor: true,
 	enablePreview: true,
+	enableBulletPoints: true,
+	enableColorVariables: true,
+	enableTextVariables: true,
 };
 
 export class ReactiveVariablesSettingTab extends PluginSettingTab {
@@ -44,6 +50,46 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enablePreview)
 					.onChange(async (value) => {
 						this.plugin.settings.enablePreview = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Feature checklist")
+			.setDesc("Turn off individual features you do not want to use.");
+
+		new Setting(containerEl)
+			.setName("Use bullet points")
+			.setDesc("Replaces dash outline markers with styled bullets.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableBulletPoints)
+					.onChange(async (value) => {
+						this.plugin.settings.enableBulletPoints = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Use colour variables")
+			.setDesc("Applies colour wrappers, colour CSS variables, and editor colour pickers.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableColorVariables)
+					.onChange(async (value) => {
+						this.plugin.settings.enableColorVariables = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Use text variables")
+			.setDesc("Applies text wrappers and text size variables.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableTextVariables)
+					.onChange(async (value) => {
+						this.plugin.settings.enableTextVariables = value;
 						await this.plugin.saveSettings();
 					})
 			);

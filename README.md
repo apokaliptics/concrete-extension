@@ -4,6 +4,8 @@ A lightweight text styling, color highlighting, and structural outliner plugin f
 
 Define custom text wrappers, inline color styles, CSS variables, and dash-based outline levels directly inside your notes using a simple, readable syntax — no settings menus required.
 
+You can also enable or disable individual features (bullet points, color variables, text variables) from the plugin settings.
+
 ## Features
 
 - **Custom text wrappers** — Turn `(text)` red, `"text"` blue, or `^text^` into a bold header by defining a simple rule.
@@ -12,7 +14,8 @@ Define custom text wrappers, inline color styles, CSS variables, and dash-based 
 - **Nested Wrappers** — Apply multiple styles to the same text by nesting them seamlessly (e.g., `_&text&_`).
 - **Combined Styles** — Reuse the same wrapper symbol across different sections to stack multiple effects simultaneously (e.g., apply a color *and* a massive header size with a single wrapper!).
 - **Interactive color palette** — Every hex color you define gets a clickable swatch in the editor. Click it to open the system color picker and update the color inline.
-- **CSS variable injection** — Keys like `header_size = 24` become `--header_size: 24px` CSS variables you can use in custom snippets.
+- **CSS variable injection** — Keys like `header_size = 24` or `text_title_size = 32` become CSS variables you can use in custom snippets.
+- **Named text variables** — Define any text style name (e.g., `title`, `body`, `caption`) and link it to a wrapper.
 - **Dash-level outliner** — Lines starting with `-`, `--`, `---` etc. become indented outline levels with aesthetic bullets, guide lines, and fading opacity.
 - **Ghost dash effect** — Dashes are hidden on non-active lines and replaced with styled bullets. Click into a line to reveal the raw dashes for editing.
 - **Collapsible config block** — The `:::vars` block features an inline toggle. Fold it away when you're done configuring, and it will cleanly display a summary like `▶ [VARS: 4 colors, 2 styles]`.
@@ -40,6 +43,15 @@ paragraph_size = 14
 .. = paragraph
 __ = underline
 && = bold
+
+# Or use the new named syntax:
+##text
+text_title_size = 32
+text_body_size = 14
+
+title = ^^
+body = ..
+__ = underline
 :::
 ```
 
@@ -50,7 +62,7 @@ Rules are organized under section headers prefixed with `##`:
 | Section | Purpose |
 |---|---|
 | `##colors` (or `##colour`, `##colours`) | Rules here treat values as colors. Wrapped text will be colored. |
-| `##text` | Rules here treat values as CSS class names. Wrapped text gets the corresponding `.rv-{value}` class applied. |
+| `##text` | Rules here treat values as CSS class names. Wrapped text gets the corresponding `.rv-{value}` class applied. You can also use the new named syntax: `text_name_size = number` and `name = ^^`. |
 
 ### 3. Color wrappers (under `##colors`)
 
@@ -88,13 +100,27 @@ Usage:
 _This becomes underlined_
 ```
 
+**Named text variables (new)**
+You can now name text styles anything you want using the `text_{name}_size = {number}` convention:
+
+```
+##text
+text_title_size = 32
+text_body_size = 14
+
+title = ^^
+body = ..
+```
+
+Now `^Title text^` uses `--text_title_size: 32px` and `_Body text_` uses `--text_body_size: 14px`.
+
 **Built-in Styles**
 The plugin ships with several out-of-the-box styles you can use immediately under `##text`:
 
 | Class | Effect |
 |---|---|
-| `header` | Bold text, sized by `--header_size` (default `1.5em`) |
-| `paragraph` | Normal text, sized by `--paragraph_size` (default `1em`) |
+| `header` | Bold text, sized by `header_size` or `text_header_size` (default `1.5em`) |
+| `paragraph` | Normal text, sized by `paragraph_size` or `text_paragraph_size` (default `1em`) |
 | `bold` | **Bold** text |
 | `italic` | *Italic* text |
 | `underline` | <ins>Underlined</ins> text |
@@ -154,6 +180,15 @@ paragraph_size = 14
 
 These become `--header_size: 24px` and `--paragraph_size: 14px` on the document container. The built-in `.rv-header` and `.rv-paragraph` classes reference these variables.
 
+You can also use the new named convention:
+
+```
+text_title_size = 32
+text_body_size = 14
+```
+
+These become `--text_title_size: 32px` and `--text_body_size: 14px`. When using named text variables (`title = ^^`), the plugin automatically picks up the matching size variable.
+
 ### 8. Dash-level outliner
 
 Start any line with one or more dashes followed by a space to create outline levels:
@@ -188,6 +223,16 @@ Start any line with one or more dashes followed by a space to create outline lev
 ### 10. Interactive color picker
 
 In the editor, every hex color value in your `:::vars` block gets a small color swatch next to it. Click the swatch to open your system's native color picker — changing the color automatically updates the hex code in your note.
+
+## Settings
+
+The plugin now includes a **Feature checklist** in its settings tab:
+
+- **Use bullet points** — Turn the dash-level outliner on or off.
+- **Use colour variables** — Enable/disable color wrappers, color CSS variables, and the editor color picker.
+- **Use text variables** — Enable/disable text wrappers and text size variables.
+
+These toggles let you disable features you don't use, keeping the editor lightweight.
 
 ## Installation
 

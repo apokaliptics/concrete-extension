@@ -22,7 +22,13 @@ import {
   findWrapperMatchesInText,
   parseDashLevel
 } from "./engine";
-import { applyCssVarsToElement } from "./utils";
+import {
+  applyCssVarsToElement,
+  getEnabledStyles,
+  getTextSizeCssVar,
+  hasEnabledStyles
+} from "./utils";
+import type { ReactiveFeatureOptions } from "./utils";
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "CodeBlock", "InlineCode"]);
 
@@ -83,52 +89,56 @@ const foldedSetField = StateField.define<Set<number>>({
   }
 });
 
-export function reactiveVariablesExtension(): Extension {
+export function reactiveVariablesExtension(options: ReactiveFeatureOptions): Extension {
   return [
     varStateField,
     foldedSetField,
-    decorationPlugin,
-    cssVarPlugin,
+    createDecorationPlugin(options),
+    createCssVarPlugin(options),
     debouncedReparsePlugin
   ];
 }
 
-const decorationPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-    constructor(view: EditorView) { this.decorations = buildDecorations(view); }
-    update(update: ViewUpdate) {
-      if (
-        update.docChanged || update.selectionSet || update.viewportChanged ||
-        update.transactions.some((tr) =>
-          tr.effects.some((e) => e.is(reparseEffect) || e.is(toggleFoldEffect))
-        )
-      ) {
-        this.decorations = buildDecorations(update.view);
+function createDecorationPlugin(options: ReactiveFeatureOptions): Extension {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) { this.decorations = buildDecorations(view, options); }
+      update(update: ViewUpdate) {
+        if (
+          update.docChanged || update.selectionSet || update.viewportChanged ||
+          update.transactions.some((tr) =>
+            tr.effects.some((e) => e.is(reparseEffect) || e.is(toggleFoldEffect))
+          )
+        ) {
+          this.decorations = buildDecorations(update.view, options);
+        }
+      }
+    },
+    { decorations: (v) => v.decorations }
+  );
+}
+
+function createCssVarPlugin(options: ReactiveFeatureOptions): Extension {
+  return ViewPlugin.fromClass(
+    class {
+      private lastKeys: string[] = [];
+      private lastVersion = -1;
+      constructor(private view: EditorView) { this.apply(view.state); }
+      update(update: ViewUpdate) {
+        const vs = update.state.field(varStateField);
+        if (vs.version !== this.lastVersion) this.apply(update.state);
+      }
+      private apply(state: EditorState) {
+        const vs = state.field(varStateField);
+        const c = this.view.dom.closest(".markdown-source-view") ?? this.view.dom;
+        if (!c) return;
+        this.lastKeys = applyCssVarsToElement(c as HTMLElement, vs.rules, this.lastKeys, options);
+        this.lastVersion = vs.version;
       }
     }
-  },
-  { decorations: (v) => v.decorations }
-);
-
-const cssVarPlugin = ViewPlugin.fromClass(
-  class {
-    private lastKeys: string[] = [];
-    private lastVersion = -1;
-    constructor(private view: EditorView) { this.apply(view.state); }
-    update(update: ViewUpdate) {
-      const vs = update.state.field(varStateField);
-      if (vs.version !== this.lastVersion) this.apply(update.state);
-    }
-    private apply(state: EditorState) {
-      const vs = state.field(varStateField);
-      const c = this.view.dom.closest(".markdown-source-view") ?? this.view.dom;
-      if (!c) return;
-      this.lastKeys = applyCssVarsToElement(c as HTMLElement, vs.rules, this.lastKeys);
-      this.lastVersion = vs.version;
-    }
-  }
-);
+  );
+}
 
 const debouncedReparsePlugin = ViewPlugin.fromClass(
   class {
@@ -137,13 +147,13 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
       if (!update.docChanged) return;
       const vs = update.startState.field(varStateField);
       if (!shouldReparse(update, vs.blocks)) return;
-      if (this.timer) window.clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => {
+      if (this.timer) activeWindow.clearTimeout(this.timer);
+      this.timer = activeWindow.setTimeout(() => {
         const { rules, blocks } = parseDeclarations(update.state.doc);
         update.view.dispatch({ effects: reparseEffect.of({ rules, blocks }) });
       }, 200);
     }
-    destroy() { if (this.timer) window.clearTimeout(this.timer); }
+    destroy() { if (this.timer) activeWindow.clearTimeout(this.timer); }
   }
 );
 
@@ -154,9 +164,9 @@ class ColorSwatchWidget extends WidgetType {
   eq(other: ColorSwatchWidget) { return other.color === this.color && other.from === this.from && other.to === this.to; }
   ignoreEvent() { return true; }
   toDOM(view: EditorView) {
-    const w = document.createElement("span");
+    const w = createSpan();
     w.className = "rv-color-picker-wrapper";
-    const input = document.createElement("input");
+    const input = createEl("input");
     input.type = "color";
     let hex = this.color;
     if (hex.length === 4) hex = "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
@@ -176,7 +186,7 @@ class BulletWidget extends WidgetType {
   constructor(public level: number) { super(); }
   eq(other: BulletWidget) { return other.level === this.level; }
   toDOM() {
-    const s = document.createElement("span");
+    const s = createSpan();
     s.className = `rv-bullet rv-bullet-${this.level}`;
     s.textContent = BULLET_CHARS[Math.min(this.level - 1, BULLET_CHARS.length - 1)] + " ";
     return s;
@@ -188,15 +198,15 @@ class FoldToggleWidget extends WidgetType {
   eq(other: FoldToggleWidget) { return other.summary === this.summary && other.lineNum === this.lineNum && other.folded === this.folded; }
   ignoreEvent() { return true; }
   toDOM(view: EditorView) {
-    const btn = document.createElement("span");
+    const btn = createSpan();
     btn.className = "rv-fold-widget";
     btn.textContent = this.folded ? `▶ ${this.summary}` : "▼";
     const ln = this.lineNum;
-    btn.addEventListener("mousedown", (e) => {
+    btn.addEventListener("mousedown", (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Use setTimeout to avoid race conditions with CM event handling
-      setTimeout(() => {
+      // Use activeWindow.setTimeout to avoid race conditions with CM event handling
+      activeWindow.setTimeout(() => {
         view.dispatch({ effects: [toggleFoldEffect.of(ln)] });
       }, 0);
     });
@@ -206,7 +216,7 @@ class FoldToggleWidget extends WidgetType {
 
 /* ── Decorations ── */
 
-function buildDecorations(view: EditorView): DecorationSet {
+function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): DecorationSet {
   const varState = view.state.field(varStateField);
   const foldedSet = view.state.field(foldedSetField);
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
@@ -222,9 +232,9 @@ function buildDecorations(view: EditorView): DecorationSet {
     for (const rule of varState.rules.values()) {
       for (const style of rule.styles) {
         if (style.valFrom >= block.from && style.valTo <= block.to) {
-          if (style.section === "colors") colors++;
-          else if (style.section === "text") textStyles++;
-          else colors++;
+          if ((style.section === "colors" || isColorString(style.val)) && options.enableColorVariables) colors++;
+          else if (style.section === "text" && options.enableTextVariables) textStyles++;
+          else if (options.enableColorVariables || options.enableTextVariables) colors++;
         }
       }
     }
@@ -252,25 +262,27 @@ function buildDecorations(view: EditorView): DecorationSet {
   }
 
   // Color swatches in un-folded blocks
-  for (const rule of varState.rules.values()) {
-    for (const style of rule.styles) {
-      // Skip if inside a folded block
-      const inFolded = varState.blocks.some(b => {
-        if (b.source !== "vars-block") return false;
-        const bln = view.state.doc.lineAt(b.from).number;
-        return foldedSet.has(bln) && style.valFrom >= b.from && style.valTo <= b.to;
-      });
-      if (inFolded) continue;
+  if (options.enableColorVariables) {
+    for (const rule of varState.rules.values()) {
+      for (const style of rule.styles) {
+        // Skip if inside a folded block
+        const inFolded = varState.blocks.some(b => {
+          if (b.source !== "vars-block") return false;
+          const bln = view.state.doc.lineAt(b.from).number;
+          return foldedSet.has(bln) && style.valFrom >= b.from && style.valTo <= b.to;
+        });
+        if (inFolded) continue;
 
-      if (isColorString(style.val)) {
-        decs.push({ from: style.valFrom, to: style.valTo, value: Decoration.mark({ class: "rv-tag-override" }) });
-        decs.push({ from: style.valFrom, to: style.valFrom, value: Decoration.widget({ widget: new ColorSwatchWidget(style.val, style.valFrom, style.valTo), side: -1 }) });
+        if (isColorString(style.val)) {
+          decs.push({ from: style.valFrom, to: style.valTo, value: Decoration.mark({ class: "rv-tag-override" }) });
+          decs.push({ from: style.valFrom, to: style.valFrom, value: Decoration.widget({ widget: new ColorSwatchWidget(style.val, style.valFrom, style.valTo), side: -1 }) });
+        }
       }
     }
   }
 
   // Wrapper + dash decorations
-  const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper");
+  const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper" && hasEnabledStyles(r, options));
   for (const range of view.visibleRanges) {
     const startLine = view.state.doc.lineAt(range.from).number;
     const endLine = view.state.doc.lineAt(range.to).number;
@@ -278,11 +290,13 @@ function buildDecorations(view: EditorView): DecorationSet {
       const line = view.state.doc.line(lineNo);
       if (isInDeclBlock(line.from, varState.blocks)) continue;
 
-      const dashLevel = parseDashLevel(line.text);
-      if (dashLevel > 0) {
-        decs.push({ from: line.from, to: line.from, value: Decoration.line({ class: `rv-level rv-level-${Math.min(dashLevel, 6)}` }) });
-        if (lineNo !== activeLine) {
-          decs.push({ from: line.from, to: line.from + dashLevel + 1, value: Decoration.replace({ widget: new BulletWidget(dashLevel) }) });
+      if (options.enableBulletPoints) {
+        const dashLevel = parseDashLevel(line.text);
+        if (dashLevel > 0) {
+          decs.push({ from: line.from, to: line.from, value: Decoration.line({ class: `rv-level rv-level-${Math.min(dashLevel, 6)}` }) });
+          if (lineNo !== activeLine) {
+            decs.push({ from: line.from, to: line.from + dashLevel + 1, value: Decoration.replace({ widget: new BulletWidget(dashLevel) }) });
+          }
         }
       }
 
@@ -293,12 +307,17 @@ function buildDecorations(view: EditorView): DecorationSet {
         decs.push({ from: m.fullFrom, to: m.contentFrom, value: Decoration.replace({}) });
         let markClass = "rv-styled";
         let markAttrs: Record<string, string> | undefined;
-        for (const style of m.rule.styles) {
+        for (const style of getEnabledStyles(m.rule, options)) {
           if (style.section === "colors" || isColorString(style.val)) {
             if (!markAttrs) markAttrs = {};
             markAttrs.style = (markAttrs.style || "") + `color: ${style.val};`;
           } else {
             markClass += ` rv-${style.val}`;
+            const textSizeCssVar = getTextSizeCssVar(style.val, varState.rules, options);
+            if (textSizeCssVar) {
+              if (!markAttrs) markAttrs = {};
+              markAttrs.style = (markAttrs.style || "") + `font-size: var(${textSizeCssVar});`;
+            }
           }
         }
         decs.push({ from: m.contentFrom, to: m.contentTo, value: Decoration.mark({ class: markClass, ...(markAttrs ? { attributes: markAttrs } : {}) }) });

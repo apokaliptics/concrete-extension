@@ -44,11 +44,11 @@
 }
 
 /* Override Obsidian tag styling for hex colors in our blocks */
-.cm-line .rv-tag-override {
-	color: var(--text-normal) !important;
-	background: none !important;
-	padding: 0 !important;
-	border-radius: 0 !important;
+.markdown-source-view .cm-line span.rv-tag-override {
+	color: var(--text-normal);
+	background: none;
+	padding: 0;
+	border-radius: 0;
 }
 
 /* ── Fold Widget ── */
@@ -70,10 +70,10 @@
 }
 
 /* Hidden lines inside a folded :::vars block */
-.rv-vars-hidden {
-	display: none !important;
-	height: 0 !important;
-	overflow: hidden !important;
+.markdown-source-view .cm-content .cm-line.rv-vars-hidden {
+	display: none;
+	height: 0;
+	overflow: hidden;
 }
 
 /* ── Dash-level outliner ── */
@@ -92,34 +92,34 @@
 	position: relative;
 	transition: padding-left 0.15s ease, opacity 0.15s ease;
 }
-.rv-level-1 {
-	padding-left: 1.5em !important;
+:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-1 {
+	padding-left: 1.5em;
 }
-.rv-level-2 {
-	padding-left: 3em !important;
+:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-2 {
+	padding-left: 3em;
 	border-left: 2px solid var(--background-modifier-border);
 	margin-left: 0.7em;
 }
-.rv-level-3 {
-	padding-left: 4.5em !important;
+:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-3 {
+	padding-left: 4.5em;
 	border-left: 2px solid var(--background-modifier-border);
 	margin-left: 1.4em;
 	opacity: 0.85;
 }
-.rv-level-4 {
-	padding-left: 6em !important;
+:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-4 {
+	padding-left: 6em;
 	border-left: 2px solid var(--background-modifier-border);
 	margin-left: 2.1em;
 	opacity: 0.75;
 }
-.rv-level-5 {
-	padding-left: 7.5em !important;
+:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-5 {
+	padding-left: 7.5em;
 	border-left: 2px solid var(--background-modifier-border);
 	margin-left: 2.8em;
 	opacity: 0.65;
 }
-.rv-level-6 {
-	padding-left: 9em !important;
+:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-6 {
+	padding-left: 9em;
 	border-left: 2px solid var(--background-modifier-border);
 	margin-left: 3.5em;
 	opacity: 0.55;

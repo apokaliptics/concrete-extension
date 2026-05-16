@@ -1,4 +1,16 @@
-import { RuleEntry } from "./engine";
+import { isColorString, RuleEntry, RuleStyle } from "./engine";
+
+export interface ReactiveFeatureOptions {
+  enableBulletPoints: boolean;
+  enableColorVariables: boolean;
+  enableTextVariables: boolean;
+}
+
+const DEFAULT_FEATURE_OPTIONS: ReactiveFeatureOptions = {
+  enableBulletPoints: true,
+  enableColorVariables: true,
+  enableTextVariables: true
+};
 
 export function sanitizeCssVarName(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]/g, "-");
@@ -7,8 +19,10 @@ export function sanitizeCssVarName(name: string): string {
 export function applyCssVarsToElement(
   el: HTMLElement,
   rules: Map<string, RuleEntry>,
-  prevKeys: string[] = []
+  prevKeys: string[] = [],
+  options?: Partial<ReactiveFeatureOptions>
 ): string[] {
+  const featureOptions = getFeatureOptions(options);
   const newKeys: string[] = [];
   for (const [name, entry] of rules) {
     if (entry.type !== "css") {
@@ -18,6 +32,7 @@ export function applyCssVarsToElement(
     // Support optional "px" if value is numeric and name ends with _size
     const lastStyle = entry.styles[entry.styles.length - 1];
     if (!lastStyle) continue;
+    if (!isCssRuleEnabled(name, entry, featureOptions)) continue;
     
     let val = lastStyle.val;
     if (/^[0-9]+$/.test(val) && (name.endsWith("size") || name.endsWith("Size"))) {
@@ -36,4 +51,67 @@ export function applyCssVarsToElement(
   }
 
   return newKeys;
+}
+
+export function getEnabledStyles(rule: RuleEntry, options?: Partial<ReactiveFeatureOptions>): RuleStyle[] {
+  const featureOptions = getFeatureOptions(options);
+  return rule.styles.filter((style) => isStyleEnabled(style, featureOptions));
+}
+
+export function hasEnabledStyles(rule: RuleEntry, options?: Partial<ReactiveFeatureOptions>): boolean {
+  return getEnabledStyles(rule, options).length > 0;
+}
+
+export function getTextSizeCssVar(
+  styleName: string,
+  rules: Map<string, RuleEntry>,
+  options?: Partial<ReactiveFeatureOptions>
+): string | null {
+  const featureOptions = getFeatureOptions(options);
+  if (!featureOptions.enableTextVariables) return null;
+
+  const sizeNames = [`text_${styleName}_size`, `${styleName}_size`];
+  for (const name of sizeNames) {
+    const entry = rules.get(name);
+    if (!entry || entry.type !== "css") continue;
+    if (!isCssRuleEnabled(name, entry, featureOptions)) continue;
+    return `--${sanitizeCssVarName(name)}`;
+  }
+
+  return null;
+}
+
+export function isStyleEnabled(style: RuleStyle, options?: Partial<ReactiveFeatureOptions>): boolean {
+  const featureOptions = getFeatureOptions(options);
+  if (style.section === "colors" || isColorString(style.val)) {
+    return featureOptions.enableColorVariables;
+  }
+  if (style.section === "text") {
+    return featureOptions.enableTextVariables;
+  }
+  return featureOptions.enableColorVariables || featureOptions.enableTextVariables;
+}
+
+function getFeatureOptions(options?: Partial<ReactiveFeatureOptions>): ReactiveFeatureOptions {
+  return { ...DEFAULT_FEATURE_OPTIONS, ...(options ?? {}) };
+}
+
+function isCssRuleEnabled(
+  name: string,
+  entry: RuleEntry,
+  options: ReactiveFeatureOptions
+): boolean {
+  const lastStyle = entry.styles[entry.styles.length - 1];
+  if (!lastStyle) return false;
+  if (isTextSizeRuleName(name) || lastStyle.section === "text") {
+    return options.enableTextVariables;
+  }
+  if (lastStyle.section === "colors" || isColorString(lastStyle.val)) {
+    return options.enableColorVariables;
+  }
+  return options.enableColorVariables || options.enableTextVariables;
+}
+
+function isTextSizeRuleName(name: string): boolean {
+  return /^text_[A-Za-z0-9_-]+_size$/i.test(name) || /^[A-Za-z0-9_-]+_size$/i.test(name);
 }

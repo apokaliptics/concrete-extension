@@ -84,23 +84,50 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
 
     const style: RuleStyle = { val, section: currentSection, valFrom: valStart, valTo: valEnd };
 
-    if (/[_-]/.test(key) || /^\d+$/.test(key) || (/^[A-Za-z0-9]+$/.test(key) && key.length !== 2)) {
-      if (!rules.has(key)) rules.set(key, { key, type: "css", isLetterWrapper: false, styles: [] });
-      rules.get(key)!.styles.push(style);
-    } else if (/^[A-Za-z]{2,}$/.test(key)) {
-      if (!rules.has(key)) rules.set(key, { key, type: "wrapper", isLetterWrapper: true, startSym: key, endSym: key, styles: [] });
-      rules.get(key)!.styles.push(style);
+    if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
+      addWrapperRule(rules, val, { ...style, val: key });
+    } else if (isCssRuleKey(key)) {
+      addCssRule(rules, key, style);
     } else {
-      let startSym = key;
-      let endSym = key;
-      if (key.length === 2) {
-        startSym = key.charAt(0);
-        endSym = key.charAt(1);
-      }
-      if (!rules.has(key)) rules.set(key, { key, type: "wrapper", isLetterWrapper: false, startSym, endSym, styles: [] });
-      rules.get(key)!.styles.push(style);
+      addWrapperRule(rules, key, style);
     }
   }
+}
+
+function addCssRule(rules: Map<string, RuleEntry>, key: string, style: RuleStyle) {
+  if (!rules.has(key)) rules.set(key, { key, type: "css", isLetterWrapper: false, styles: [] });
+  rules.get(key)!.styles.push(style);
+}
+
+function addWrapperRule(rules: Map<string, RuleEntry>, key: string, style: RuleStyle) {
+  let startSym = key;
+  let endSym = key;
+  const isLetterWrapper = /^[A-Za-z]{2,}$/.test(key);
+  if (!isLetterWrapper && key.length === 2) {
+    startSym = key.charAt(0);
+    endSym = key.charAt(1);
+  }
+  if (!rules.has(key)) rules.set(key, { key, type: "wrapper", isLetterWrapper, startSym, endSym, styles: [] });
+  rules.get(key)!.styles.push(style);
+}
+
+function isCssRuleKey(key: string): boolean {
+  if (/^\d+$/.test(key)) return true;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(key)) return false;
+  return key.length !== 2;
+}
+
+function isTextNameToWrapperRule(key: string, val: string): boolean {
+  return !isTextSizeRuleKey(key) && /^[A-Za-z][A-Za-z0-9_-]*$/.test(key) && isWrapperKey(val);
+}
+
+function isTextSizeRuleKey(key: string): boolean {
+  return /^text_[A-Za-z0-9_-]+_size$/i.test(key) || /^[A-Za-z0-9_-]+_size$/i.test(key);
+}
+
+function isWrapperKey(value: string): boolean {
+  if (!value || /\s/.test(value)) return false;
+  return !/^[A-Za-z0-9]{3,}$/.test(value);
 }
 
 export function findWrapperMatchesInText(text: string, lineFrom: number, wrappers: RuleEntry[]): WrapperMatch[] {

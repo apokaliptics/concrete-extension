@@ -14,11 +14,11 @@ export default class ReactiveVariablesPlugin extends Plugin {
     await this.loadSettings();
 
     if (this.settings.enableEditor) {
-      this.registerEditorExtension(reactiveVariablesExtension());
+      this.registerEditorExtension(reactiveVariablesExtension(this.settings));
     }
 
     if (this.settings.enablePreview) {
-      this.registerMarkdownPostProcessor(createPreviewProcessor(this.app));
+      this.registerMarkdownPostProcessor(createPreviewProcessor(this.app, this.settings));
     }
 
     this.addSettingTab(new ReactiveVariablesSettingTab(this.app, this));
