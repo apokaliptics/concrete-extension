@@ -7,6 +7,7 @@ export interface ReactiveVariablesSettings {
 	enableBulletPoints: boolean;
 	enableColorVariables: boolean;
 	enableTextVariables: boolean;
+	hidePastedImagesInSidebar: boolean;
 }
 
 export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
 	enableBulletPoints: true,
 	enableColorVariables: true,
 	enableTextVariables: true,
+	hidePastedImagesInSidebar: false,
 };
 
 export class ReactiveVariablesSettingTab extends PluginSettingTab {
@@ -90,6 +92,18 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableTextVariables)
 					.onChange(async (value) => {
 						this.plugin.settings.enableTextVariables = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Hide pasted images in sidebar")
+			.setDesc("Hides 'Pasted image ...' files from the File Explorer.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.hidePastedImagesInSidebar)
+					.onChange(async (value) => {
+						this.plugin.settings.hidePastedImagesInSidebar = value;
 						await this.plugin.saveSettings();
 					})
 			);

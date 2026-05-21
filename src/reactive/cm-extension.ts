@@ -20,7 +20,8 @@ import {
   RuleEntry,
   parseDeclarations,
   findWrapperMatchesInText,
-  parseDashLevel
+  parseDashLevel,
+  containsImageMarkdown
 } from "./engine";
 import {
   applyCssVarsToElement,
@@ -292,7 +293,7 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
 
       if (options.enableBulletPoints) {
         const dashLevel = parseDashLevel(line.text);
-        if (dashLevel > 0) {
+        if (dashLevel > 0 && !containsImageMarkdown(line.text)) {
           decs.push({ from: line.from, to: line.from, value: Decoration.line({ class: `rv-level rv-level-${Math.min(dashLevel, 6)}` }) });
           if (lineNo !== activeLine) {
             decs.push({ from: line.from, to: line.from + dashLevel + 1, value: Decoration.replace({ widget: new BulletWidget(dashLevel) }) });

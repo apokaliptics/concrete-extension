@@ -249,3 +249,7 @@ export function parseDashLevel(lineText: string): number {
   if (!match || !match[1]) return 0;
   return match[1].length;
 }
+
+export function containsImageMarkdown(text: string): boolean {
+  return /!\[\[.*?\]\]|!\[.*?\]\(.*?\)/.test(text);
+}

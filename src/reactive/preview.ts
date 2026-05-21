@@ -122,6 +122,8 @@ function applyLineSubstitutions(el: HTMLElement) {
   const paragraphs = el.querySelectorAll("p");
 
   for (const p of Array.from(paragraphs)) {
+    if (p.querySelector("img, .internal-embed")) continue;
+
     const firstChild = p.firstChild;
     if (!firstChild || !(firstChild.instanceOf(Text))) continue;
 

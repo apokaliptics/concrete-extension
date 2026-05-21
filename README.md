@@ -18,6 +18,8 @@ You can also enable or disable individual features (bullet points, color variabl
 - **Named text variables** — Define any text style name (e.g., `title`, `body`, `caption`) and link it to a wrapper.
 - **Dash-level outliner** — Lines starting with `-`, `--`, `---` etc. become indented outline levels with aesthetic bullets, guide lines, and fading opacity.
 - **Ghost dash effect** — Dashes are hidden on non-active lines and replaced with styled bullets. Click into a line to reveal the raw dashes for editing.
+- **Image-safe bullet points** — Lines containing image embeds (`![[...]]` or `![...](...)`) are automatically skipped by the bullet-point outliner, preventing images from being resized, faded, or displaced.
+- **Hide pasted images in sidebar** — Toggle to hide "Pasted image ..." files from the File Explorer, keeping your vault clean.
 - **Collapsible config block** — The `:::vars` block features an inline toggle. Fold it away when you're done configuring, and it will cleanly display a summary like `▶ [VARS: 4 colors, 2 styles]`.
 - **Live Preview & Reading View** — All features work in both editor modes.
 
@@ -228,7 +230,8 @@ In the editor, every hex color value in your `:::vars` block gets a small color 
 
 The plugin now includes a **Feature checklist** in its settings tab:
 
-- **Use bullet points** — Turn the dash-level outliner on or off.
+- **Use bullet points** — Turn the dash-level outliner on or off.les.
+- **Hide pasted images in sidebar** — Hide "Pasted image ..." fi from the File Explorer to reduce clutter
 - **Use colour variables** — Enable/disable color wrappers, color CSS variables, and the editor color picker.
 - **Use text variables** — Enable/disable text wrappers and text size variables.
 
