@@ -98,7 +98,7 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Hide pasted images in sidebar")
-			.setDesc("Hides 'Pasted image ...' files from the File Explorer.")
+			.setDesc("Hides pasted image files from the file explorer.")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.hidePastedImagesInSidebar)
