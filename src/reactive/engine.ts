@@ -12,7 +12,7 @@ export type RuleType = "css" | "wrapper";
 
 export interface RuleStyle {
   val: string;
-  section: "colors" | "text" | "default";
+  section: "colors" | "text" | "default" | "notes";
   valFrom: number;
   valTo: number;
 }
@@ -39,9 +39,92 @@ export interface ParseResult {
   blocks: DeclBlockRange[];
 }
 
-export function parseDeclarations(doc: Text): ParseResult {
-  const blocks = findDeclarationBlocks(doc);
+interface MathRange {
+  from: number;
+  to: number;
+}
+
+export function findMathRanges(text: string): MathRange[] {
+  const ranges: MathRange[] = [];
+  
+  // 1. Find block math $$...$$
+  const blockRegex = /\$\$(.*?)\$\$/g;
+  let match;
+  while ((match = blockRegex.exec(text)) !== null) {
+    ranges.push({ from: match.index, to: match.index + match[0].length });
+  }
+  
+  // 2. Find inline math $...$
+  const inlineRegex = /\$([^$]+)\$/g;
+  while ((match = inlineRegex.exec(text)) !== null) {
+    const start = match.index;
+    const end = match.index + match[0].length;
+    const overlaps = ranges.some(r => start >= r.from && end <= r.to);
+    if (!overlaps) {
+      ranges.push({ from: start, to: end });
+    }
+  }
+  
+  return ranges;
+}
+
+export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEntry>) {
+  if (!globalVarsStr) return;
+  const lines = globalVarsStr.split("\n");
+  let currentSection: "colors" | "text" | "default" | "notes" = "default";
+
+  for (let i = 0; i < lines.length; i++) {
+    const text = (lines[i] || "").trim();
+    if (!text) continue;
+
+    if (text.startsWith("##")) {
+      const sectionName = text.slice(2).trim().toLowerCase();
+      if (sectionName === "colors" || sectionName === "colour" || sectionName === "colours") {
+        currentSection = "colors";
+      } else if (sectionName === "text") {
+        currentSection = "text";
+      }
+      continue;
+    }
+
+    if (text.toLowerCase().startsWith("#notes")) {
+      currentSection = "notes";
+      continue;
+    }
+
+    if (text.startsWith("#")) continue;
+
+    const equalsIdx = text.indexOf("=");
+    if (equalsIdx === -1) continue;
+
+    const key = text.slice(0, equalsIdx).trim();
+    const valRaw = text.slice(equalsIdx + 1);
+    const val = valRaw.trim();
+    if (!key || !val) continue;
+
+    // For global variables, we don't have document offsets (valFrom / valTo) for widgets, so we can set them to -1.
+    const style: RuleStyle = { val, section: currentSection, valFrom: -1, valTo: -1 };
+
+    if (currentSection === "notes") {
+      addCssRule(rules, key, style);
+    } else if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
+      addWrapperRule(rules, val, { ...style, val: key });
+    } else if (isCssRuleKey(key)) {
+      addCssRule(rules, key, style);
+    } else {
+      addWrapperRule(rules, key, style);
+    }
+  }
+}
+
+export function parseDeclarations(doc: Text, globalVarsStr?: string): ParseResult {
   const rules = new Map<string, RuleEntry>();
+  
+  if (globalVarsStr) {
+    parseGlobalVars(globalVarsStr, rules);
+  }
+
+  const blocks = findDeclarationBlocks(doc);
 
   for (const block of blocks) {
     parseBlock(doc, block, rules);
@@ -53,7 +136,7 @@ export function parseDeclarations(doc: Text): ParseResult {
 function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEntry>) {
   const startLine = doc.lineAt(block.from).number;
   const endLine = doc.lineAt(block.to).number;
-  let currentSection: "colors" | "text" | "default" = "default";
+  let currentSection: "colors" | "text" | "default" | "notes" = "default";
 
   for (let lineNo = startLine + 1; lineNo <= endLine - 1; lineNo += 1) {
     const text = doc.line(lineNo).text.trim();
@@ -66,6 +149,11 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
       } else if (sectionName === "text") {
         currentSection = "text";
       }
+      continue;
+    }
+
+    if (text.toLowerCase().startsWith("#notes")) {
+      currentSection = "notes";
       continue;
     }
 
@@ -84,7 +172,9 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
 
     const style: RuleStyle = { val, section: currentSection, valFrom: valStart, valTo: valEnd };
 
-    if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
+    if (currentSection === "notes") {
+      addCssRule(rules, key, style);
+    } else if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
       addWrapperRule(rules, val, { ...style, val: key });
     } else if (isCssRuleKey(key)) {
       addCssRule(rules, key, style);
@@ -95,8 +185,18 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
 }
 
 function addCssRule(rules: Map<string, RuleEntry>, key: string, style: RuleStyle) {
-  if (!rules.has(key)) rules.set(key, { key, type: "css", isLetterWrapper: false, styles: [] });
-  rules.get(key)!.styles.push(style);
+  if (!rules.has(key)) {
+    rules.set(key, { key, type: "css", isLetterWrapper: false, styles: [] });
+  }
+  const entry = rules.get(key)!;
+  if (style.valFrom !== -1) {
+    const globalStyleIdx = entry.styles.findIndex(s => s.valFrom === -1);
+    if (globalStyleIdx !== -1) {
+      entry.styles[globalStyleIdx] = style;
+      return;
+    }
+  }
+  entry.styles.push(style);
 }
 
 function addWrapperRule(rules: Map<string, RuleEntry>, key: string, style: RuleStyle) {
@@ -107,8 +207,18 @@ function addWrapperRule(rules: Map<string, RuleEntry>, key: string, style: RuleS
     startSym = key.charAt(0);
     endSym = key.charAt(1);
   }
-  if (!rules.has(key)) rules.set(key, { key, type: "wrapper", isLetterWrapper, startSym, endSym, styles: [] });
-  rules.get(key)!.styles.push(style);
+  if (!rules.has(key)) {
+    rules.set(key, { key, type: "wrapper", isLetterWrapper, startSym, endSym, styles: [] });
+  }
+  const entry = rules.get(key)!;
+  if (style.valFrom !== -1) {
+    const globalStyleIdx = entry.styles.findIndex(s => s.valFrom === -1 && s.section === style.section);
+    if (globalStyleIdx !== -1) {
+      entry.styles[globalStyleIdx] = style;
+      return;
+    }
+  }
+  entry.styles.push(style);
 }
 
 function isCssRuleKey(key: string): boolean {
@@ -133,6 +243,7 @@ function isWrapperKey(value: string): boolean {
 export function findWrapperMatchesInText(text: string, lineFrom: number, wrappers: RuleEntry[]): WrapperMatch[] {
   const results: WrapperMatch[] = [];
   const usedDelimiters: Array<[number, number]> = [];
+  const mathRanges = findMathRanges(text);
 
   const sortedWrappers = [...wrappers].sort((a, b) => (b.startSym?.length || 0) - (a.startSym?.length || 0));
 
@@ -144,6 +255,16 @@ export function findWrapperMatchesInText(text: string, lineFrom: number, wrapper
         : findSymbolMatch(text, searchFrom, rule);
 
       if (!match) break;
+
+      const isInsideMath = mathRanges.some(r => 
+        (match.startIdx >= r.from && match.startIdx < r.to) ||
+        (match.endIdx > r.from && match.endIdx <= r.to)
+      );
+
+      if (isInsideMath) {
+        searchFrom = match.startIdx + 1;
+        continue;
+      }
       
       const startDelim: [number, number] = [match.startIdx, match.contentStart];
       const endDelim: [number, number] = [match.contentEnd, match.endIdx];
@@ -244,12 +365,29 @@ export function isColorString(val: string): boolean {
          /^hsla?\([^)]+\)$/i.test(val);
 }
 
-export function parseDashLevel(lineText: string): number {
-  const match = /^(-{1,6})\s+\S/.exec(lineText);
-  if (!match || !match[1]) return 0;
-  return match[1].length;
-}
-
 export function containsImageMarkdown(text: string): boolean {
   return /!\[\[.*?\]\]|!\[.*?\]\(.*?\)/.test(text);
+}
+
+export function stripVariables(text: string): string {
+  const lines = text.split("\n");
+  const cleanLines: string[] = [];
+  let inBlock = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === undefined) continue;
+    const trimmed = line.trim();
+    if (trimmed === ":::vars") {
+      inBlock = true;
+      continue;
+    }
+    if (inBlock) {
+      if (trimmed === ":::") {
+        inBlock = false;
+      }
+      continue;
+    }
+    cleanLines.push(line);
+  }
+  return cleanLines.join("\n");
 }

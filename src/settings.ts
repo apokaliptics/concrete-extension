@@ -1,3 +1,4 @@
+/* eslint-disable obsidianmd/no-static-styles-assignment */
 import { App, PluginSettingTab, Setting } from "obsidian";
 import ReactiveVariablesPlugin from "./main";
 
@@ -8,6 +9,7 @@ export interface ReactiveVariablesSettings {
 	enableColorVariables: boolean;
 	enableTextVariables: boolean;
 	hidePastedImagesInSidebar: boolean;
+	globalVars: string;
 }
 
 export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
@@ -17,6 +19,7 @@ export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
 	enableColorVariables: true,
 	enableTextVariables: true,
 	hidePastedImagesInSidebar: false,
+	globalVars: "",
 };
 
 export class ReactiveVariablesSettingTab extends PluginSettingTab {
@@ -31,6 +34,9 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 
 		containerEl.empty();
+
+		// Category 1: Core Configuration
+		new Setting(containerEl).setName("Core configuration").setHeading();
 
 		new Setting(containerEl)
 			.setName("Enable editor features")
@@ -57,12 +63,26 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Feature checklist")
-			.setDesc("Turn off individual features you do not want to use.");
+			.setName("Global configuration defaults")
+			.setDesc("Define a default vars block that applies to all notes across the vault.")
+			.addTextArea((text) => {
+				text.inputEl.rows = 6;
+				text.inputEl.style.setProperty("width", "100%");
+				text
+					.setPlaceholder("##colors\n() = #ef4444\n\n##text\nheader_size = 24")
+					.setValue(this.plugin.settings.globalVars)
+					.onChange(async (value) => {
+						this.plugin.settings.globalVars = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		// Category 2: Editor Behaviors
+		new Setting(containerEl).setName("Editor behaviors").setHeading();
 
 		new Setting(containerEl)
 			.setName("Use bullet points")
-			.setDesc("Replaces dash outline markers with styled bullets.")
+			.setDesc("Styles native list bullets with the aesthetic hierarchy.")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.enableBulletPoints)
@@ -95,6 +115,9 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		// Category 3: Advanced Settings
+		new Setting(containerEl).setName("Advanced").setHeading();
 
 		new Setting(containerEl)
 			.setName("Hide pasted images in sidebar")

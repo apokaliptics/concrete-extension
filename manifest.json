@@ -1,7 +1,7 @@
 {
 	"id": "concrete",
 	"name": "Concrete",
-	"version": "0.3.0",
+	"version": "0.5.0",
 	"minAppVersion": "1.6.0",
 	"description": "Reactive variable system for Markdown notes.",
 	"author": "apokaliptics",

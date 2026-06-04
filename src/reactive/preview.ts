@@ -1,6 +1,6 @@
 import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
 import { Text as CmText } from "@codemirror/state";
-import { parseDeclarations, RuleEntry, isColorString, findWrapperMatchesInText, parseDashLevel } from "./engine";
+import { parseDeclarations, RuleEntry, isColorString, findWrapperMatchesInText } from "./engine";
 import { applyCssVarsToElement, getEnabledStyles, getTextSizeCssVar, hasEnabledStyles } from "./utils";
 import type { ReactiveFeatureOptions } from "./utils";
 
@@ -13,7 +13,7 @@ export function createPreviewProcessor(app: App, options: ReactiveFeatureOptions
 
     const content = await app.vault.cachedRead(file);
     const doc = CmText.of(content.split("\n"));
-    const { rules } = parseDeclarations(doc);
+    const { rules } = parseDeclarations(doc, options.globalVars);
 
     const container = el.closest(".markdown-preview-view");
     if (container instanceof HTMLElement) {
@@ -21,9 +21,6 @@ export function createPreviewProcessor(app: App, options: ReactiveFeatureOptions
     }
 
     applyInlineSubstitutions(el, rules, options);
-    if (options.enableBulletPoints) {
-      applyLineSubstitutions(el);
-    }
   };
 }
 
@@ -117,31 +114,17 @@ function buildDOMTree(
   return fragment;
 }
 
-function applyLineSubstitutions(el: HTMLElement) {
-  const BULLET_CHARS = ["•", "◦", "▸", "▹", "⁃", "·"];
-  const paragraphs = el.querySelectorAll("p");
-
-  for (const p of Array.from(paragraphs)) {
-    if (p.querySelector("img, .internal-embed")) continue;
-
-    const firstChild = p.firstChild;
-    if (!firstChild || !(firstChild.instanceOf(Text))) continue;
-
-    const text = firstChild.nodeValue ?? "";
-    const level = parseDashLevel(text);
-    if (level === 0) continue;
-
-    p.classList.add("rv-level", `rv-level-${Math.min(level, 6)}`);
-
-    const bullet = BULLET_CHARS[Math.min(level - 1, BULLET_CHARS.length - 1)];
-    firstChild.nodeValue = bullet + " " + text.slice(level).trimStart();
-  }
-}
 
 function isInCodeNode(node: Node): boolean {
   let el = node.parentElement;
   while (el) {
-    if (el.tagName === "CODE" || el.tagName === "PRE") {
+    if (
+      el.tagName === "CODE" ||
+      el.tagName === "PRE" ||
+      el.classList.contains("math") ||
+      el.classList.contains("math-block") ||
+      el.classList.contains("math-inline")
+    ) {
       return true;
     }
     el = el.parentElement;

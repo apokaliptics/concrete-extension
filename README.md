@@ -1,27 +1,86 @@
 # Concrete Extension
 
-A lightweight text styling, color highlighting, and structural outliner plugin for Obsidian.
+A reactive variable system, spatial overlay workspace, and structural outliner plugin for Obsidian.
 
-Define custom text wrappers, inline color styles, CSS variables, and dash-based outline levels directly inside your notes using a simple, readable syntax — no settings menus required.
-
-You can also enable or disable individual features (bullet points, color variables, text variables) from the plugin settings.
+Define custom text wrappers, inline color styles, CSS variables, and structural layouts directly inside your notes using a simple, readable syntax. Create floating sticky notes, copy styled content to external apps, and protect LaTeX from formatting collisions — all from a single `:::vars` block.
 
 ## Features
 
+### Core editor
+
 - **Custom text wrappers** — Turn `(text)` red, `"text"` blue, or `^text^` into a bold header by defining a simple rule.
-- **Letter wrappers** — Use letter pairs like `hh text hh` for highlighting. The letters must be grouped together and spaced from the content to avoid false matches with normal words.
-- **Delimiter hiding** — Wrapper symbols are hidden in the rendered view. You only see the styled content; click into the line to reveal the raw syntax.
-- **Nested Wrappers** — Apply multiple styles to the same text by nesting them seamlessly (e.g., `_&text&_`).
-- **Combined Styles** — Reuse the same wrapper symbol across different sections to stack multiple effects simultaneously (e.g., apply a color *and* a massive header size with a single wrapper!).
-- **Interactive color palette** — Every hex color you define gets a clickable swatch in the editor. Click it to open the system color picker and update the color inline.
-- **CSS variable injection** — Keys like `header_size = 24` or `text_title_size = 32` become CSS variables you can use in custom snippets.
-- **Named text variables** — Define any text style name (e.g., `title`, `body`, `caption`) and link it to a wrapper.
-- **Dash-level outliner** — Lines starting with `-`, `--`, `---` etc. become indented outline levels with aesthetic bullets, guide lines, and fading opacity.
-- **Ghost dash effect** — Dashes are hidden on non-active lines and replaced with styled bullets. Click into a line to reveal the raw dashes for editing.
-- **Image-safe bullet points** — Lines containing image embeds (`![[...]]` or `![...](...)`) are automatically skipped by the bullet-point outliner, preventing images from being resized, faded, or displaced.
-- **Hide pasted images in sidebar** — Toggle to hide "Pasted image ..." files from the File Explorer, keeping your vault clean.
-- **Collapsible config block** — The `:::vars` block features an inline toggle. Fold it away when you're done configuring, and it will cleanly display a summary like `▶ [VARS: 4 colors, 2 styles]`.
+- **Letter wrappers** — Use letter pairs like `hh text hh` for highlighting. Letters must be spaced from the content to avoid false matches.
+- **Delimiter hiding** — Wrapper symbols are hidden in the rendered view. Click into the line to reveal the raw syntax.
+- **Nested wrappers** — Combine multiple styles by nesting wrappers (e.g., `_&text&_`).
+- **Combined styles** — Define the same wrapper in both `##colors` and `##text` to stack a color *and* a text style simultaneously.
+- **Interactive color palette** — Every hex color in the editor gets a clickable swatch. Click to open the system color picker and update inline.
+- **CSS variable injection** — Keys like `header_size = 24` become CSS variables (`--header_size: 24px`) on the document container.
+- **Named text variables** — Define any text style name (e.g., `title`, `body`) and link it to a wrapper with `text_{name}_size`.
+
+### Native list interception
+
+- **Styled native bullets** — Standard `-` and `+` list markers are intercepted and replaced with aesthetic bullet characters (`•`, `◦`, `▸`, `▹`, `⁃`, `·`) per indent level.
+- **Guide lines and fading opacity** — Deeper indent levels fade visually with guide lines for hierarchy.
+- **Ghost bullet effect** — Bullets appear on inactive lines; click into a line to reveal the raw markers for editing.
+- **Image-safe** — Lines containing image embeds (`![[...]]` or `![...](...)`) are skipped by the outliner.
+
+### Color autocomplete
+
+- **Context-aware color picker** — Typing `#` on a color property line inside a `:::vars` block spawns a floating swatch palette with 9 preset colors and a custom color picker button.
+- **Auto-fill** — Selecting a swatch or using the custom picker writes the hex value directly into the document.
+- **Auto-dismiss** — The popup disappears when the cursor leaves the color scope.
+
+### Data portability and clipboard
+
+- **Variable-stripped copying** — Right-click context menu item "Copy content without variables" strips all `:::vars` blocks and writes clean text to the clipboard.
+- **Cross-platform style preservation** — Copying content writes a dual-flavor clipboard payload:
+  - `text/plain`: Clean, variable-stripped markdown text.
+  - `text/html`: Compiled HTML with inline CSS (`<span style="...">`) so styles survive when pasted into Google Docs, Word, etc.
+
+### Spatial overlay system (Sticky notes)
+
+- **Floating canvas layer** — A non-destructive overlay layer sits above the document text. Right-click to create a sticky note at any position.
+- **Interactive notes** — Notes default to 100×100 pixels and support:
+  - **Drag** anywhere across the overlay.
+  - **Resize** by pulling the corner handle.
+  - **Rotate** freely using the rotation handle.
+  - **Lock** via a toggle button to prevent accidental edits.
+  - **Rich text** content with image support.
+  - **Delete** with a single click.
+- **`#notes` scope in `:::vars`** — Configure sticky note defaults programmatically:
+  ```
+  :::vars
+  #notes
+  text_size = 14
+  text_colour = #333333
+  note_size = 120 x 80
+  note_colour = #fffae6
+  :::
+  ```
+- **Automatic persistence** — Notes are serialized back into the `:::vars` block and saved with the document.
+
+### Global configuration defaults
+
+- **Global vars block** — A text area in the plugin settings serializes directly to `data.json`. Any variables defined here apply as a universal foundation across all notes in the vault.
+- **Local override** — Inline `:::vars` blocks automatically inherit, merge with, and override global defaults.
+
+### Layout presets
+
+- **Pre-made layout dropdowns** — Select from bundled preset schemes ("Classic Red & Blue", "Minimalist Mint", "Royal Purple & Gold") via a modal dropdown to instantly format documents.
+- **Ribbon icon and command** — Access presets from the ribbon or with the "Insert layout preset" command.
+- **Community presets pipeline** — The `src/templates/` directory is structured to accept community-contributed layout configurations via GitHub Pull Requests.
+
+### LaTeX protection
+
+- **Parse-exclusion boundaries** — Native LaTeX blocks (`$...$` and `$$...$$`) override the variable engine. Any character ranges inside math wrappers are completely masked out, preventing formatting collisions with LaTeX symbols like underscores, carets, or braces.
+
+### Other
+
+- **Collapsible config block** — The `:::vars` block features an inline fold toggle. Fold it to see a summary like `▶ [VARS: 4 colors, 2 styles]`.
+- **Hide pasted images in sidebar** — Toggle to hide "Pasted image ..." files from the File Explorer.
 - **Live Preview & Reading View** — All features work in both editor modes.
+
+---
 
 ## How to use
 
@@ -46,7 +105,7 @@ paragraph_size = 14
 __ = underline
 && = bold
 
-# Or use the new named syntax:
+# Or use the named syntax:
 ##text
 text_title_size = 32
 text_body_size = 14
@@ -64,7 +123,8 @@ Rules are organized under section headers prefixed with `##`:
 | Section | Purpose |
 |---|---|
 | `##colors` (or `##colour`, `##colours`) | Rules here treat values as colors. Wrapped text will be colored. |
-| `##text` | Rules here treat values as CSS class names. Wrapped text gets the corresponding `.rv-{value}` class applied. You can also use the new named syntax: `text_name_size = number` and `name = ^^`. |
+| `##text` | Rules here treat values as CSS class names or text styles. Use `text_name_size = number` and `name = ^^` for named variables. |
+| `#notes` | Configures spatial overlay sticky note defaults (`text_size`, `text_colour`, `note_size`, `note_colour`). |
 
 ### 3. Color wrappers (under `##colors`)
 
@@ -83,7 +143,7 @@ Then use them in your note:
 "This text will be blue!"
 ```
 
-**Result:** The wrapper symbols `(`, `)`, `"`, `"` are hidden. You only see the styled text.
+**Result:** The wrapper symbols are hidden. You only see the styled text.
 
 ### 4. Text wrappers (under `##text`)
 
@@ -102,8 +162,8 @@ Usage:
 _This becomes underlined_
 ```
 
-**Named text variables (new)**
-You can now name text styles anything you want using the `text_{name}_size = {number}` convention:
+**Named text variables:**
+Name text styles anything you want using the `text_{name}_size = {number}` convention:
 
 ```
 ##text
@@ -114,10 +174,9 @@ title = ^^
 body = ..
 ```
 
-Now `^Title text^` uses `--text_title_size: 32px` and `_Body text_` uses `--text_body_size: 14px`.
+Now `^Title text^` uses `--text_title_size: 32px` and `.Body text.` uses `--text_body_size: 14px`.
 
-**Built-in Styles**
-The plugin ships with several out-of-the-box styles you can use immediately under `##text`:
+**Built-in styles:**
 
 | Class | Effect |
 |---|---|
@@ -131,16 +190,15 @@ The plugin ships with several out-of-the-box styles you can use immediately unde
 
 *(You can define any other value and style it yourself with a CSS snippet targeting `.rv-{value}`)*
 
-### 5. Advanced: Nested & Combined Wrappers
+### 5. Nested & combined wrappers
 
-**Nesting Wrappers:**
-You can combine multiple text wrappers by nesting them inside each other!
+**Nesting wrappers:**
 ```
 _&This text is bold and underlined!&_
 ```
 
-**Combining Styles:**
-If you want a single wrapper to do multiple things, just define it in **both** sections! 
+**Combining styles:**
+Define the same wrapper in both sections:
 
 ```yaml
 :::vars
@@ -152,11 +210,11 @@ If you want a single wrapper to do multiple things, just define it in **both** s
 header_size = 70
 :::
 ```
-Now, writing `&Huge red header!&` will automatically apply the color `#ff0000` **and** the massive `header` size simultaneously.
+Now, writing `&Huge red header!&` applies the color **and** the header size simultaneously.
 
 ### 6. Letter wrappers
 
-You can also use letter pairs as wrappers. They **must be spaced** from the content:
+Use letter pairs as wrappers. They **must be spaced** from the content:
 
 ```
 ##colors
@@ -169,7 +227,7 @@ Usage:
 hh This text will be green hh
 ```
 
-> **Why spaces?** To prevent false matches with normal words that happen to start and end with the same letter. `hh text hh` matches, but `hello` does not.
+> **Why spaces?** To prevent false matches with normal words that happen to start and end with the same letters.
 
 ### 7. CSS variables
 
@@ -182,34 +240,16 @@ paragraph_size = 14
 
 These become `--header_size: 24px` and `--paragraph_size: 14px` on the document container. The built-in `.rv-header` and `.rv-paragraph` classes reference these variables.
 
-You can also use the new named convention:
+Named convention:
 
 ```
 text_title_size = 32
 text_body_size = 14
 ```
 
-These become `--text_title_size: 32px` and `--text_body_size: 14px`. When using named text variables (`title = ^^`), the plugin automatically picks up the matching size variable.
+These become `--text_title_size: 32px` and `--text_body_size: 14px`. Named text variables (`title = ^^`) automatically pick up the matching size variable.
 
-### 8. Dash-level outliner
-
-Start any line with one or more dashes followed by a space to create outline levels:
-
-```
-- Level 1 item
--- Level 2 sub-item
---- Level 3 deep item
----- Level 4
-```
-
-**What happens:**
-
-- Each dash level gets increasing indentation and a guide line on the left.
-- The raw dashes are replaced with aesthetic bullet characters (`•`, `◦`, `▸`, etc.).
-- Deeper levels automatically fade in opacity for visual hierarchy.
-- **Ghost dash effect:** Click into a line to reveal the raw dashes for editing. Move away and the bullets return.
-
-### 9. Wrapper syntax rules
+### 8. Wrapper syntax rules
 
 | Key | Type | Start | End | Example |
 |---|---|---|---|---|
@@ -222,20 +262,57 @@ Start any line with one or more dashes followed by a space to create outline lev
 **Symmetric** (2 same chars): that char = both start and end.
 **Letters** (2+ letters): the full key is used, must be surrounded by spaces.
 
-### 10. Interactive color picker
+### 9. Interactive color picker
 
 In the editor, every hex color value in your `:::vars` block gets a small color swatch next to it. Click the swatch to open your system's native color picker — changing the color automatically updates the hex code in your note.
 
+### 10. Color autocomplete
+
+When typing inside a `:::vars` block on a color property line, type `#` to trigger a floating color palette popup. Select from 9 preset swatches or click "🌈 Custom color" for the full system picker. The hex value is written directly into the text.
+
+### 11. Sticky notes
+
+Right-click in the editor and select **Create sticky note** to spawn a floating note. Notes support:
+
+- Drag to reposition
+- Resize from the corner
+- Rotate using the 🔄 handle
+- Lock/unlock with the 🔒 toggle
+- Delete with the ❌ button
+- Rich text editing
+
+Configure defaults with a `#notes` section in your `:::vars` block.
+
+### 12. Global defaults
+
+Open **Settings → Concrete** and use the **Global configuration defaults** text area to define variables that apply to every note. These act as a universal base — local `:::vars` blocks in each note inherit and can override them.
+
+### 13. Layout presets
+
+Click the layout icon in the ribbon or use the command **Insert layout preset** to open the preset selector. Choose from:
+
+- **Classic Red & Blue** — Red and blue accents with header styling.
+- **Minimalist Mint** — Fresh green accents with clean typography.
+- **Royal Purple & Gold** — Purple headers and amber highlights.
+
+The selected scheme's `:::vars` block is inserted at the top of your note.
+
 ## Settings
 
-The plugin now includes a **Feature checklist** in its settings tab:
+The plugin settings panel is organized into three categories:
 
-- **Use bullet points** — Turn the dash-level outliner on or off.les.
-- **Hide pasted images in sidebar** — Hide "Pasted image ..." fi from the File Explorer to reduce clutter
+### Core configuration
+- **Enable editor features** — Adds inline values, tooltips, and completions in the editor.
+- **Enable preview substitutions** — Applies reactive variables in reading view.
+- **Global configuration defaults** — Text area for vault-wide variable definitions.
+
+### Editor behaviors
+- **Use bullet points** — Toggle the native list interception and styling.
 - **Use colour variables** — Enable/disable color wrappers, color CSS variables, and the editor color picker.
 - **Use text variables** — Enable/disable text wrappers and text size variables.
 
-These toggles let you disable features you don't use, keeping the editor lightweight.
+### Advanced
+- **Hide pasted images in sidebar** — Hide "Pasted image ..." files from the File Explorer.
 
 ## Installation
 
@@ -243,10 +320,11 @@ These toggles let you disable features you don't use, keeping the editor lightwe
 1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release.
 2. Place them in `VaultFolder/.obsidian/plugins/concrete-extension/`.
 3. Reload Obsidian.
-4. Enable **Concrete Extension** in **Settings → Community plugins**.
+4. Enable **Concrete** in **Settings → Community plugins**.
 
 ### Development
 1. Clone this repo into your `.obsidian/plugins/` folder.
 2. `npm install`
 3. `npm run dev` — compiles and watches for changes.
-4. `npm run lint` — checks for style errors.
+4. `npm run build` — production build.
+5. `npm run lint` — checks for style errors.

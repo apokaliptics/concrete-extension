@@ -4,12 +4,14 @@ export interface ReactiveFeatureOptions {
   enableBulletPoints: boolean;
   enableColorVariables: boolean;
   enableTextVariables: boolean;
+  globalVars: string;
 }
 
 const DEFAULT_FEATURE_OPTIONS: ReactiveFeatureOptions = {
   enableBulletPoints: true,
   enableColorVariables: true,
-  enableTextVariables: true
+  enableTextVariables: true,
+  globalVars: ""
 };
 
 export function sanitizeCssVarName(name: string): string {
@@ -89,6 +91,9 @@ export function isStyleEnabled(style: RuleStyle, options?: Partial<ReactiveFeatu
   if (style.section === "text") {
     return featureOptions.enableTextVariables;
   }
+  if (style.section === "notes") {
+    return false; // Notes styles are used in spatial overlay, not wrapper markdown styling
+  }
   return featureOptions.enableColorVariables || featureOptions.enableTextVariables;
 }
 
@@ -103,6 +108,9 @@ function isCssRuleEnabled(
 ): boolean {
   const lastStyle = entry.styles[entry.styles.length - 1];
   if (!lastStyle) return false;
+  if (lastStyle.section === "notes") {
+    return false; // Skip injecting notes config properties as CSS variables on document container
+  }
   if (isTextSizeRuleName(name) || lastStyle.section === "text") {
     return options.enableTextVariables;
   }

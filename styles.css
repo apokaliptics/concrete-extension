@@ -76,51 +76,274 @@
 	overflow: hidden;
 }
 
-/* ── Dash-level outliner ── */
+/* ── Native List Bullet Styling ── */
+/* Uses Obsidian's built-in list system, styled with the aesthetic hierarchy */
 
-/* Bullet character styling */
-.rv-bullet {
+/* Editor: Bullet character styling */
+.markdown-source-view .cm-formatting-list-ul {
+	transition: color 0.15s ease, transform 0.15s ease;
+}
+
+/* Level 1 - Top level, normal weight */
+.markdown-source-view .HyperMD-list-line-1 .cm-formatting-list-ul {
+	color: var(--text-normal);
+	font-weight: 500;
+}
+
+/* Level 2 - First indent, muted */
+.markdown-source-view .HyperMD-list-line-2 .cm-formatting-list-ul {
 	color: var(--text-muted);
-	user-select: none;
 }
-.rv-bullet-1 { color: var(--text-normal); }
-.rv-bullet-2 { color: var(--text-muted); }
-.rv-bullet-3 { color: var(--text-faint); }
 
-/* Line-level indentation and guide lines */
-.rv-level {
-	position: relative;
-	transition: padding-left 0.15s ease, opacity 0.15s ease;
+/* Level 3 - Faded */
+.markdown-source-view .HyperMD-list-line-3 .cm-formatting-list-ul {
+	color: var(--text-faint);
 }
-:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-1 {
-	padding-left: 1.5em;
-}
-:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-2 {
-	padding-left: 3em;
-	border-left: 2px solid var(--background-modifier-border);
-	margin-left: 0.7em;
-}
-:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-3 {
-	padding-left: 4.5em;
-	border-left: 2px solid var(--background-modifier-border);
-	margin-left: 1.4em;
-	opacity: 0.85;
-}
-:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-4 {
-	padding-left: 6em;
-	border-left: 2px solid var(--background-modifier-border);
-	margin-left: 2.1em;
+
+/* Level 4+ - Further faded */
+.markdown-source-view .HyperMD-list-line-4 .cm-formatting-list-ul,
+.markdown-source-view .HyperMD-list-line-5 .cm-formatting-list-ul,
+.markdown-source-view .HyperMD-list-line-6 .cm-formatting-list-ul {
+	color: var(--text-faint);
 	opacity: 0.75;
 }
-:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-5 {
-	padding-left: 7.5em;
+
+/* Preview: List marker styling */
+.markdown-preview-view ul > li::marker {
+	transition: color 0.15s ease;
+}
+
+/* Preview Level 1 */
+.markdown-preview-view ul > li::marker {
+	color: var(--text-normal);
+}
+
+/* Preview nested levels */
+.markdown-preview-view ul ul > li::marker {
+	color: var(--text-muted);
+}
+
+.markdown-preview-view ul ul ul > li::marker {
+	color: var(--text-faint);
+}
+
+.markdown-preview-view ul ul ul ul > li::marker,
+.markdown-preview-view ul ul ul ul ul > li::marker,
+.markdown-preview-view ul ul ul ul ul ul > li::marker {
+	color: var(--text-faint);
+	opacity: 0.75;
+}
+
+/* Guide lines for nested lists */
+.markdown-source-view .HyperMD-list-line {
+	transition: opacity 0.15s ease;
+}
+
+.markdown-source-view .HyperMD-list-line-2,
+.markdown-source-view .HyperMD-list-line-3,
+.markdown-source-view .HyperMD-list-line-4,
+.markdown-source-view .HyperMD-list-line-5,
+.markdown-source-view .HyperMD-list-line-6 {
 	border-left: 2px solid var(--background-modifier-border);
-	margin-left: 2.8em;
+}
+
+.markdown-source-view .HyperMD-list-line-2 {
+	opacity: 0.95;
+}
+
+.markdown-source-view .HyperMD-list-line-3 {
+	opacity: 0.85;
+}
+
+.markdown-source-view .HyperMD-list-line-4 {
+	opacity: 0.75;
+}
+
+.markdown-source-view .HyperMD-list-line-5 {
 	opacity: 0.65;
 }
-:is(.markdown-source-view .cm-line, .markdown-preview-view p).rv-level-6 {
-	padding-left: 9em;
-	border-left: 2px solid var(--background-modifier-border);
-	margin-left: 3.5em;
+
+.markdown-source-view .HyperMD-list-line-6 {
 	opacity: 0.55;
 }
+
+/* Preview nested list opacity fade */
+.markdown-preview-view ul ul {
+	opacity: 0.95;
+}
+
+.markdown-preview-view ul ul ul {
+	opacity: 0.85;
+}
+
+.markdown-preview-view ul ul ul ul {
+	opacity: 0.75;
+}
+
+.markdown-preview-view ul ul ul ul ul {
+	opacity: 0.65;
+}
+
+.markdown-preview-view ul ul ul ul ul ul {
+	opacity: 0.55;
+}
+
+/* ── Color Autocomplete Pop-up ── */
+.rv-color-autocomplete-popup {
+	position: absolute;
+	z-index: 1000;
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+	padding: 8px;
+	width: 136px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.rv-color-autocomplete-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 4px;
+}
+.rv-color-autocomplete-swatch {
+	width: 36px;
+	height: 24px;
+	border-radius: 4px;
+	cursor: pointer;
+	border: 1px solid rgba(0, 0, 0, 0.1);
+	transition: transform 0.1s ease;
+}
+.rv-color-autocomplete-swatch:hover {
+	transform: scale(1.1);
+}
+.rv-color-autocomplete-bottom {
+	display: flex;
+	justify-content: center;
+}
+.rv-color-autocomplete-picker-btn {
+	width: 100%;
+	font-size: 11px;
+	padding: 4px;
+	cursor: pointer;
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	color: var(--text-normal);
+}
+.rv-color-autocomplete-picker-btn:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* ── Bullet Widget Styling ── */
+.rv-bullet {
+	display: inline-block;
+	transition: color 0.15s ease;
+}
+.rv-bullet-1 { color: var(--text-normal); font-weight: 500; }
+.rv-bullet-2 { color: var(--text-muted); }
+.rv-bullet-3 { color: var(--text-faint); }
+.rv-bullet-4, .rv-bullet-5, .rv-bullet-6 { color: var(--text-faint); opacity: 0.75; }
+
+/* ── Reading View List Bullet Interception ── */
+.markdown-preview-view ul > li::marker {
+	content: "•  " !important;
+}
+.markdown-preview-view ul ul > li::marker {
+	content: "◦  " !important;
+}
+.markdown-preview-view ul ul ul > li::marker {
+	content: "▸  " !important;
+}
+.markdown-preview-view ul ul ul ul > li::marker {
+	content: "▹  " !important;
+}
+.markdown-preview-view ul ul ul ul ul > li::marker {
+	content: "⁃  " !important;
+}
+.markdown-preview-view ul ul ul ul ul ul > li::marker {
+	content: "·  " !important;
+}
+
+/* ── Spatial Overlay & Sticky Notes ── */
+.concrete-spatial-overlay {
+	pointer-events: none;
+}
+
+.concrete-sticky-note {
+	min-width: 80px;
+	min-height: 80px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	resize: both;
+	transition: transform 0.15s ease-out, box-shadow 0.15s ease;
+	opacity: 0.95;
+	z-index: 10;
+}
+
+.concrete-sticky-note:hover {
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+	opacity: 1;
+}
+
+.concrete-note-header {
+	height: 26px;
+	background-color: rgba(0, 0, 0, 0.05);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 8px;
+	cursor: move;
+	user-select: none;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.concrete-note-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	font-size: 12px;
+	padding: 2px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0.6;
+	transition: opacity 0.15s;
+}
+
+.concrete-note-btn:hover {
+	opacity: 1;
+}
+
+.concrete-note-rotate-handle {
+	cursor: pointer;
+	font-size: 12px;
+	opacity: 0.6;
+	user-select: none;
+}
+
+.concrete-note-rotate-handle:hover {
+	opacity: 1;
+}
+
+.concrete-note-content {
+	flex: 1;
+	padding: 10px;
+	overflow: auto;
+	outline: none;
+	min-height: 40px;
+	line-height: 1.4;
+}
+
+.concrete-note-content img {
+	max-width: 100%;
+	height: auto;
+	display: block;
+	margin-top: 4px;
+}
+

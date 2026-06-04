@@ -1,8 +1,11 @@
+/* eslint-disable obsidianmd/no-static-styles-assignment */
 import {
   EditorState,
   Extension,
   StateEffect,
-  StateField
+  StateField,
+  Facet,
+  Text
 } from "@codemirror/state";
 import {
   Decoration,
@@ -20,7 +23,6 @@ import {
   RuleEntry,
   parseDeclarations,
   findWrapperMatchesInText,
-  parseDashLevel,
   containsImageMarkdown
 } from "./engine";
 import {
@@ -47,9 +49,14 @@ interface ReparsePayload {
 const reparseEffect = StateEffect.define<ReparsePayload>();
 const toggleFoldEffect = StateEffect.define<number>(); // line number
 
+const optionsFacet = Facet.define<ReactiveFeatureOptions, ReactiveFeatureOptions>({
+  combine: values => values[values.length - 1] || { enableBulletPoints: true, enableColorVariables: true, enableTextVariables: true, globalVars: "" }
+});
+
 const varStateField = StateField.define<VarState>({
   create(state) {
-    const { rules, blocks } = parseDeclarations(state.doc);
+    const options = state.facet(optionsFacet);
+    const { rules, blocks } = parseDeclarations(state.doc, options?.globalVars);
     return { rules, blocks, version: 1 };
   },
   update(value, tr) {
@@ -92,11 +99,13 @@ const foldedSetField = StateField.define<Set<number>>({
 
 export function reactiveVariablesExtension(options: ReactiveFeatureOptions): Extension {
   return [
+    optionsFacet.of(options),
     varStateField,
     foldedSetField,
     createDecorationPlugin(options),
     createCssVarPlugin(options),
-    debouncedReparsePlugin
+    debouncedReparsePlugin,
+    colorAutocompletePlugin
   ];
 }
 
@@ -150,7 +159,8 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
       if (!shouldReparse(update, vs.blocks)) return;
       if (this.timer) activeWindow.clearTimeout(this.timer);
       this.timer = activeWindow.setTimeout(() => {
-        const { rules, blocks } = parseDeclarations(update.state.doc);
+        const options = update.state.facet(optionsFacet);
+        const { rules, blocks } = parseDeclarations(update.state.doc, options?.globalVars);
         update.view.dispatch({ effects: reparseEffect.of({ rules, blocks }) });
       }, 200);
     }
@@ -182,18 +192,6 @@ class ColorSwatchWidget extends WidgetType {
   }
 }
 
-const BULLET_CHARS = ["•", "◦", "▸", "▹", "⁃", "·"];
-class BulletWidget extends WidgetType {
-  constructor(public level: number) { super(); }
-  eq(other: BulletWidget) { return other.level === this.level; }
-  toDOM() {
-    const s = createSpan();
-    s.className = `rv-bullet rv-bullet-${this.level}`;
-    s.textContent = BULLET_CHARS[Math.min(this.level - 1, BULLET_CHARS.length - 1)] + " ";
-    return s;
-  }
-}
-
 class FoldToggleWidget extends WidgetType {
   constructor(public summary: string, public lineNum: number, public folded: boolean) { super(); }
   eq(other: FoldToggleWidget) { return other.summary === this.summary && other.lineNum === this.lineNum && other.folded === this.folded; }
@@ -206,12 +204,28 @@ class FoldToggleWidget extends WidgetType {
     btn.addEventListener("mousedown", (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Use activeWindow.setTimeout to avoid race conditions with CM event handling
       activeWindow.setTimeout(() => {
         view.dispatch({ effects: [toggleFoldEffect.of(ln)] });
       }, 0);
     });
     return btn;
+  }
+}
+
+const BULLET_CHARS = ["•", "◦", "▸", "▹", "⁃", "·"];
+
+class BulletWidget extends WidgetType {
+  constructor(public level: number) {
+    super();
+  }
+  eq(other: BulletWidget) {
+    return other.level === this.level;
+  }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = `rv-bullet rv-bullet-${this.level}`;
+    span.textContent = BULLET_CHARS[Math.min(this.level - 1, BULLET_CHARS.length - 1)] + " ";
+    return span;
   }
 }
 
@@ -248,7 +262,6 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
       value: Decoration.widget({ widget: new FoldToggleWidget(summary, blockLineNum, isFolded), side: 1 })
     });
 
-    // When folded, hide every line AFTER the :::vars line using line decorations + CSS
     if (isFolded) {
       const endLineNum = view.state.doc.lineAt(block.to).number;
       for (let ln = blockLineNum + 1; ln <= endLineNum; ln++) {
@@ -266,7 +279,6 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
   if (options.enableColorVariables) {
     for (const rule of varState.rules.values()) {
       for (const style of rule.styles) {
-        // Skip if inside a folded block
         const inFolded = varState.blocks.some(b => {
           if (b.source !== "vars-block") return false;
           const bln = view.state.doc.lineAt(b.from).number;
@@ -274,7 +286,7 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
         });
         if (inFolded) continue;
 
-        if (isColorString(style.val)) {
+        if (isColorString(style.val) && style.valFrom !== -1) {
           decs.push({ from: style.valFrom, to: style.valTo, value: Decoration.mark({ class: "rv-tag-override" }) });
           decs.push({ from: style.valFrom, to: style.valFrom, value: Decoration.widget({ widget: new ColorSwatchWidget(style.val, style.valFrom, style.valTo), side: -1 }) });
         }
@@ -282,7 +294,7 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
     }
   }
 
-  // Wrapper + dash decorations
+  // Wrapper + list + dash decorations
   const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper" && hasEnabledStyles(r, options));
   for (const range of view.visibleRanges) {
     const startLine = view.state.doc.lineAt(range.from).number;
@@ -291,20 +303,40 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
       const line = view.state.doc.line(lineNo);
       if (isInDeclBlock(line.from, varState.blocks)) continue;
 
+      // 1. Native List Interception
       if (options.enableBulletPoints) {
-        const dashLevel = parseDashLevel(line.text);
-        if (dashLevel > 0 && !containsImageMarkdown(line.text)) {
-          decs.push({ from: line.from, to: line.from, value: Decoration.line({ class: `rv-level rv-level-${Math.min(dashLevel, 6)}` }) });
+        const listMatch = /^([ \t]*)([-+])([ \t]+)/.exec(line.text);
+        if (listMatch && !containsImageMarkdown(line.text)) {
+          const indent = listMatch[1] || "";
+          const marker = listMatch[2] || "";
+          const space = listMatch[3] || "";
+          const level = getListLevel(view.state, line.from + indent.length);
+
+          decs.push({
+            from: line.from,
+            to: line.from,
+            value: Decoration.line({ class: `rv-level rv-level-${Math.min(level, 6)}` })
+          });
+
           if (lineNo !== activeLine) {
-            decs.push({ from: line.from, to: line.from + dashLevel + 1, value: Decoration.replace({ widget: new BulletWidget(dashLevel) }) });
+            const start = line.from + indent.length;
+            const end = start + marker.length + space.length;
+            decs.push({
+              from: start,
+              to: end,
+              value: Decoration.replace({
+                widget: new BulletWidget(level)
+              })
+            });
           }
         }
       }
 
+      // 2. Wrapper parsing
       if (lineNo === activeLine || wrappers.length === 0) continue;
       const matches = findWrapperMatchesInText(line.text, line.from, wrappers);
       for (const m of matches) {
-        if (isInCode(view.state, m.fullFrom)) continue;
+        if (isInCodeOrMath(view.state, m.fullFrom)) continue;
         decs.push({ from: m.fullFrom, to: m.contentFrom, value: Decoration.replace({}) });
         let markClass = "rv-styled";
         let markAttrs: Record<string, string> | undefined;
@@ -331,7 +363,240 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
   return Decoration.set(decs, true);
 }
 
+/* ── Color Autocomplete Pop-up ViewPlugin ── */
+
+const colorAutocompletePlugin = ViewPlugin.fromClass(
+  class {
+    private popupEl: HTMLDivElement | null = null;
+    private activeRange: { from: number; to: number } | null = null;
+
+    constructor(private view: EditorView) {}
+
+    update(update: ViewUpdate) {
+      const options = update.state.facet(optionsFacet);
+      if (!options.enableColorVariables) {
+        this.destroyPopup();
+        return;
+      }
+
+      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        this.checkState(options);
+      }
+    }
+
+    destroy() {
+      this.destroyPopup();
+    }
+
+    private destroyPopup() {
+      if (this.popupEl) {
+        this.popupEl.remove();
+        this.popupEl = null;
+      }
+      this.activeRange = null;
+    }
+
+    private checkState(options: ReactiveFeatureOptions) {
+      const state = this.view.state;
+      if (state.selection.ranges.length !== 1) {
+        this.destroyPopup();
+        return;
+      }
+
+      const pos = state.selection.main.head;
+      const line = state.doc.lineAt(pos);
+      const varState = state.field(varStateField);
+
+      const block = varState.blocks.find(b => pos >= b.from && pos <= b.to);
+      if (!block) {
+        this.destroyPopup();
+        return;
+      }
+
+      const section = getCurrentSectionOfLine(state.doc, line.number, block);
+      if (!isColorPropertyLine(line.text, section)) {
+        this.destroyPopup();
+        return;
+      }
+
+      const eqIdx = line.text.indexOf("=");
+      const hashIdx = line.text.indexOf("#", eqIdx);
+      if (hashIdx === -1 || hashIdx < eqIdx) {
+        this.destroyPopup();
+        return;
+      }
+
+      const hashPos = line.from + hashIdx;
+      if (pos < hashPos) {
+        this.destroyPopup();
+        return;
+      }
+
+      const afterHash = line.text.substring(hashIdx + 1);
+      const hexMatch = /^[a-fA-F0-9]{0,8}/.exec(afterHash);
+      const hexVal = hexMatch ? hexMatch[0] : "";
+      const valEnd = hashPos + 1 + hexVal.length;
+
+      if (pos > valEnd) {
+        this.destroyPopup();
+        return;
+      }
+
+      this.activeRange = { from: hashPos + 1, to: valEnd };
+      this.showPopup(hashPos, hexVal);
+    }
+
+    private showPopup(hashPos: number, currentHex: string) {
+      if (!this.popupEl) {
+        this.popupEl = document.createElement("div");
+        this.popupEl.className = "rv-color-autocomplete-popup";
+        
+        const colors = [
+          "#ef4444", "#f97316", "#f59e0b",
+          "#10b981", "#06b6d4", "#3b82f6",
+          "#6366f1", "#8b5cf6", "#ec4899"
+        ];
+
+        const grid = document.createElement("div");
+        grid.className = "rv-color-autocomplete-grid";
+        for (const col of colors) {
+          const swatch = document.createElement("div");
+          swatch.className = "rv-color-autocomplete-swatch";
+          swatch.style.backgroundColor = col;
+          swatch.title = col;
+          swatch.onclick = (e) => {
+            e.stopPropagation();
+            this.insertColor(col);
+          };
+          grid.appendChild(swatch);
+        }
+        this.popupEl.appendChild(grid);
+
+        const bottomBar = document.createElement("div");
+        bottomBar.className = "rv-color-autocomplete-bottom";
+        
+        const pickerBtn = document.createElement("button");
+        pickerBtn.className = "rv-color-autocomplete-picker-btn";
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        pickerBtn.textContent = "🌈 Custom color";
+        
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "color";
+        hiddenInput.style.setProperty("display", "none");
+        if (currentHex.length === 6 || currentHex.length === 3) {
+          let hex = currentHex;
+          if (hex.length === 3) {
+            const r = hex.charAt(0);
+            const g = hex.charAt(1);
+            const b = hex.charAt(2);
+            hex = r + r + g + g + b + b;
+          }
+          hiddenInput.value = "#" + hex;
+        } else {
+          hiddenInput.value = "#3b82f6";
+        }
+        
+        hiddenInput.onchange = () => {
+          this.insertColor(hiddenInput.value);
+        };
+        hiddenInput.onclick = (e) => e.stopPropagation();
+
+        pickerBtn.onclick = (e) => {
+          e.stopPropagation();
+          hiddenInput.click();
+        };
+
+        bottomBar.appendChild(pickerBtn);
+        bottomBar.appendChild(hiddenInput);
+        this.popupEl.appendChild(bottomBar);
+
+        const scroller = this.view.dom.closest(".cm-scroller") || this.view.dom;
+        scroller.appendChild(this.popupEl);
+      }
+
+      const coords = this.view.coordsAtPos(hashPos);
+      if (coords) {
+        const scroller = this.view.dom.closest(".cm-scroller") || this.view.dom;
+        const scrollerRect = scroller.getBoundingClientRect();
+        this.popupEl.style.setProperty("position", "absolute");
+        this.popupEl.style.setProperty("left", `${coords.left - scrollerRect.left + scroller.scrollLeft}px`);
+        this.popupEl.style.setProperty("top", `${coords.bottom - scrollerRect.top + scroller.scrollTop + 4}px`);
+      }
+    }
+
+    private insertColor(color: string) {
+      if (!this.activeRange) return;
+      const hex = color.startsWith("#") ? color.substring(1) : color;
+      this.view.dispatch({
+        changes: {
+          from: this.activeRange.from,
+          to: this.activeRange.to,
+          insert: hex
+        },
+        selection: { anchor: this.activeRange.from + hex.length }
+      });
+      this.destroyPopup();
+    }
+  }
+);
+
+function getCurrentSectionOfLine(doc: Text, lineNo: number, block: DeclBlockRange): "colors" | "text" | "default" | "notes" {
+  const startLine = doc.lineAt(block.from).number;
+  let currentSection: "colors" | "text" | "default" | "notes" = "default";
+  for (let l = startLine + 1; l <= lineNo; l++) {
+    const text = doc.line(l).text.trim();
+    if (text.startsWith("##")) {
+      const sectionName = text.slice(2).trim().toLowerCase();
+      if (sectionName === "colors" || sectionName === "colour" || sectionName === "colours") {
+        currentSection = "colors";
+      } else if (sectionName === "text") {
+        currentSection = "text";
+      }
+    } else if (text.toLowerCase().startsWith("#notes")) {
+      currentSection = "notes";
+    }
+  }
+  return currentSection;
+}
+
+function isColorPropertyLine(lineText: string, section: string): boolean {
+  const eqIdx = lineText.indexOf("=");
+  if (eqIdx === -1) return false;
+  const key = lineText.substring(0, eqIdx).trim();
+  if (section === "colors") return true;
+  if (/color|colour/i.test(key)) return true;
+  return false;
+}
+
 /* ── Helpers ── */
+
+function getListLevel(state: EditorState, pos: number): number {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1);
+  let level = 0;
+  while (node) {
+    if (node.name === "BulletList" || node.name === "OrderedList") {
+      level++;
+    }
+    node = node.parent;
+  }
+  if (level === 0) {
+    const lineText = state.doc.lineAt(pos).text;
+    const indentMatch = /^([ \t]*)/.exec(lineText);
+    if (indentMatch) {
+      const indent = indentMatch[1] || "";
+      let spaceCount = 0;
+      let tabCount = 0;
+      for (const char of indent) {
+        if (char === "\t") tabCount++;
+        else if (char === " ") spaceCount++;
+      }
+      level = tabCount + Math.floor(spaceCount / 4) + 1;
+    } else {
+      level = 1;
+    }
+  }
+  return level;
+}
 
 function shouldReparse(update: ViewUpdate, blocks: DeclBlockRange[]): boolean {
   let hit = false;
@@ -348,9 +613,12 @@ function isInDeclBlock(pos: number, blocks: DeclBlockRange[]): boolean {
   return blocks.some(b => pos >= b.from && pos <= b.to);
 }
 
-function isInCode(state: EditorState, pos: number): boolean {
+function isInCodeOrMath(state: EditorState, pos: number): boolean {
   let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
-  while (node) { if (CODE_NODE_NAMES.has(node.name)) return true; node = node.parent; }
+  while (node) {
+    if (CODE_NODE_NAMES.has(node.name) || node.name.toLowerCase().includes("math")) return true;
+    node = node.parent;
+  }
   return false;
 }
 
