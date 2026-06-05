@@ -25,6 +25,12 @@ export const PRESETS: LayoutPreset[] = [
 ##text
 header_size = 28
 ^^ = header
+
+#notes
+text_size = 13
+text_colour = #1e3a8a
+note_size = 180x130
+note_colour = #dbeafe
 :::`
   },
   {
@@ -92,6 +98,12 @@ text_header_size = 28
 text_body_size = 15
 ^^ = header
 __ = bold
+
+#notes
+text_size = 12
+text_colour = #0f172a
+note_size = 220x160
+note_colour = #f1f5f9
 :::`
   },
   {
@@ -140,6 +152,12 @@ text_header_size = 24
 text_body_size = 16
 ^^ = header
 __ = italic
+
+#notes
+text_size = 14
+text_colour = #431407
+note_size = 200x150
+note_colour = #ffedd5
 :::`
   },
   {

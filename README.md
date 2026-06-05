@@ -276,9 +276,9 @@ Right-click in the editor and select **Create sticky note** to spawn a floating 
 
 - Drag to reposition
 - Resize from the corner
-- Rotate using the 🔄 handle
-- Lock/unlock with the 🔒 toggle
-- Delete with the ❌ button
+- Rotate using the rotation handle
+- Lock/unlock with the lock icon toggle
+- Delete with the delete button
 - Rich text editing
 
 Configure defaults with a `#notes` section in your `:::vars` block.
@@ -289,17 +289,13 @@ Open **Settings → Concrete** and use the **Global configuration defaults** tex
 
 ### 13. Layout presets
 
-Click the layout icon in the ribbon or use the command **Insert layout preset** to open the preset selector. Choose from:
-
-- **Classic Red & Blue** — Red and blue accents with header styling.
-- **Minimalist Mint** — Fresh green accents with clean typography.
-- **Royal Purple & Gold** — Purple headers and amber highlights.
+Click the layout icon in the ribbon or use the command **Insert layout preset** to open the preset selector. Choose from presets like **Classic Red & Blue**, **Minimalist Mint**, **Cozy Journal**, **Academic & Research**, or **Spatial Brainstorming & Mindmap** to instantly configure variables and note styling.
 
 The selected scheme's `:::vars` block is inserted at the top of your note.
 
 ## Settings
 
-The plugin settings panel is organized into three categories:
+The plugin settings panel is organized into four categories:
 
 ### Core configuration
 - **Enable editor features** — Adds inline values, tooltips, and completions in the editor.
@@ -310,6 +306,12 @@ The plugin settings panel is organized into three categories:
 - **Use bullet points** — Toggle the native list interception and styling.
 - **Use colour variables** — Enable/disable color wrappers, color CSS variables, and the editor color picker.
 - **Use text variables** — Enable/disable text wrappers and text size variables.
+
+### Sticky notes fallback defaults
+- **Default note size** — Fallback note size (e.g. `200x150` or `160`).
+- **Default note color** — Fallback background color (hex, e.g. `#fffbeb`).
+- **Default note text color** — Fallback note text color (hex, e.g. `#451a03`).
+- **Default note text size** — Fallback text size in note content (e.g. `14px`).
 
 ### Advanced
 - **Hide pasted images in sidebar** — Hide "Pasted image ..." files from the File Explorer.

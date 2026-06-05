@@ -26,6 +26,13 @@ export interface StickyNoteData {
   content: string;
 }
 
+// Inline modern SVG icon constants
+const ICON_LOCK = `<svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`;
+const ICON_UNLOCK = `<svg viewBox="0 0 24 24"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H18v-2c0-3.31-2.69-6-6-6S6 2.69 6 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"/></svg>`;
+const ICON_DELETE = `<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+const ICON_ROTATE = `<svg viewBox="0 0 24 24"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>`;
+const ICON_RESIZE = `<svg viewBox="0 0 10 10"><path d="M10 0 L0 10 M10 3 L3 10 M10 6 L6 10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>`;
+
 export function serializeNotes(notes: Map<string, StickyNoteData>, existingNotesSection: string): string {
   const defaults = new Map<string, string>();
   const lines = existingNotesSection.split("\n");
@@ -149,8 +156,8 @@ export async function parseNotesFromView(app: App, view: MarkdownView, globalVar
         if (parts.length >= 7) {
           const x = parseFloat(parts[0] || "0");
           const y = parseFloat(parts[1] || "0");
-          const w = parseFloat(parts[2] || "100");
-          const h = parseFloat(parts[3] || "100");
+          const w = parseFloat(parts[2] || "120");
+          const h = parseFloat(parts[3] || "80");
           const r = parseFloat(parts[4] || "0");
           const locked = parts[5] === "true";
           const contentStr = decodeURIComponent(parts.slice(6).join(",") || "");
@@ -166,6 +173,7 @@ export async function parseNotesFromView(app: App, view: MarkdownView, globalVar
 export class SpatialOverlayManager {
   private activeOverlays = new Map<string, HTMLElement>();
   private activeNotes = new Map<string, Map<string, StickyNoteData>>();
+  private pendingSaveLeaves = new Set<string>();
   private saveTimeout: number | null = null;
   public lastContextClick = { x: 100, y: 100 };
 
@@ -196,6 +204,7 @@ export class SpatialOverlayManager {
         el.remove();
         this.activeOverlays.delete(leafId);
         this.activeNotes.delete(leafId);
+        this.pendingSaveLeaves.delete(leafId);
       }
     }
   }
@@ -224,7 +233,24 @@ export class SpatialOverlayManager {
 
   private async renderNotes(leafId: string, view: MarkdownView, overlayEl: HTMLElement) {
     const { notes, defaults } = await parseNotesFromView(this.plugin.app, view, this.plugin.settings.globalVars);
-    this.activeNotes.set(leafId, notes);
+    
+    // Resolve merged settings and document defaults
+    const resolvedDefaults: NoteDefaults = {
+      textSize: defaults.textSize || this.plugin.settings.defaultNoteTextSize || "14px",
+      textColour: defaults.textColour || this.plugin.settings.defaultNoteTextColour || "",
+      noteSize: defaults.noteSize || this.plugin.settings.defaultNoteSize || "200x150",
+      noteColour: defaults.noteColour || this.plugin.settings.defaultNoteColour || ""
+    };
+
+    let notesToRender = notes;
+    if (this.pendingSaveLeaves.has(leafId)) {
+      const inMemory = this.activeNotes.get(leafId);
+      if (inMemory) {
+        notesToRender = inMemory;
+      }
+    } else {
+      this.activeNotes.set(leafId, notes);
+    }
 
     const existingElements = Array.from(overlayEl.querySelectorAll(".concrete-sticky-note"));
     const existingMap = new Map<string, HTMLElement>();
@@ -234,13 +260,13 @@ export class SpatialOverlayManager {
       if (id) existingMap.set(id, el);
     }
 
-    for (const note of notes.values()) {
+    for (const note of notesToRender.values()) {
       let noteEl = existingMap.get(note.id);
       if (!noteEl) {
-        noteEl = this.createNoteDOM(leafId, view, note, defaults, overlayEl);
+        noteEl = this.createNoteDOM(leafId, view, note, resolvedDefaults, overlayEl);
         overlayEl.appendChild(noteEl);
       } else {
-        this.updateNoteDOM(noteEl, note, defaults);
+        this.updateNoteDOM(noteEl, note, resolvedDefaults);
       }
       existingMap.delete(note.id);
     }
@@ -263,13 +289,18 @@ export class SpatialOverlayManager {
     noteEl.style.setProperty("position", "absolute");
     noteEl.style.setProperty("pointer-events", "auto");
 
-    const bgColour = defaults.noteColour || "#fffae6";
-    const textColour = defaults.textColour || "var(--text-normal)";
-    const fontSize = defaults.textSize ? (defaults.textSize.endsWith("px") ? defaults.textSize : `${defaults.textSize}px`) : "14px";
-
-    noteEl.style.setProperty("background-color", bgColour);
-    noteEl.style.setProperty("color", textColour);
-    noteEl.style.setProperty("font-size", fontSize);
+    // Apply resolved style defaults
+    if (defaults.noteColour) {
+      noteEl.style.setProperty("background-color", defaults.noteColour);
+      noteEl.style.removeProperty("border-color");
+    }
+    if (defaults.textColour) {
+      noteEl.style.setProperty("color", defaults.textColour);
+    }
+    if (defaults.textSize) {
+      const fs = defaults.textSize.endsWith("px") ? defaults.textSize : `${defaults.textSize}px`;
+      noteEl.style.setProperty("font-size", fs);
+    }
 
     noteEl.style.setProperty("left", `${note.x}px`);
     noteEl.style.setProperty("top", `${note.y}px`);
@@ -282,17 +313,17 @@ export class SpatialOverlayManager {
 
     const lockBtn = document.createElement("button");
     lockBtn.className = "concrete-note-btn concrete-lock-btn";
-    lockBtn.textContent = note.locked ? "🔒" : "🔓";
+    lockBtn.innerHTML = note.locked ? ICON_LOCK : ICON_UNLOCK;
     lockBtn.title = note.locked ? "Unlock note" : "Lock note";
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "concrete-note-btn concrete-delete-btn";
-    deleteBtn.textContent = "❌";
+    deleteBtn.innerHTML = ICON_DELETE;
     deleteBtn.title = "Delete note";
 
     const rotateHandle = document.createElement("div");
     rotateHandle.className = "concrete-note-rotate-handle";
-    rotateHandle.textContent = "🔄";
+    rotateHandle.innerHTML = ICON_ROTATE;
     rotateHandle.title = "Drag to rotate";
 
     headerEl.appendChild(lockBtn);
@@ -307,6 +338,18 @@ export class SpatialOverlayManager {
     contentEl.innerHTML = note.content;
     noteEl.appendChild(contentEl);
 
+    // Dedicated resize handle
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "concrete-note-resize-handle";
+    resizeHandle.innerHTML = ICON_RESIZE;
+    noteEl.appendChild(resizeHandle);
+
+    // Stop propagation on mousedown so header/note dragging is not triggered
+    lockBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    deleteBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    rotateHandle.addEventListener("mousedown", (e) => e.stopPropagation());
+    resizeHandle.addEventListener("mousedown", (e) => e.stopPropagation());
+
     lockBtn.onclick = (e) => {
       e.stopPropagation();
       const currentNotes = this.activeNotes.get(leafId);
@@ -314,7 +357,7 @@ export class SpatialOverlayManager {
       const data = currentNotes.get(note.id);
       if (data) {
         data.locked = !data.locked;
-        lockBtn.textContent = data.locked ? "🔒" : "🔓";
+        lockBtn.innerHTML = data.locked ? ICON_LOCK : ICON_UNLOCK;
         lockBtn.title = data.locked ? "Unlock note" : "Lock note";
         contentEl.contentEditable = data.locked ? "false" : "true";
         this.saveNotes(view, currentNotes);
@@ -330,6 +373,59 @@ export class SpatialOverlayManager {
       this.saveNotes(view, currentNotes);
     };
 
+    // Drag-to-resize handle implementation
+    let isResizing = false;
+    let resizeStartX = 0;
+    let resizeStartY = 0;
+    let resizeStartW = 0;
+    let resizeStartH = 0;
+
+    resizeHandle.onmousedown = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      const currentNotes = this.activeNotes.get(leafId);
+      const data = currentNotes?.get(note.id);
+      if (data?.locked) return;
+
+      isResizing = true;
+      resizeStartX = e.clientX;
+      resizeStartY = e.clientY;
+      resizeStartW = noteEl.clientWidth;
+      resizeStartH = noteEl.clientHeight;
+
+      const onResizeMove = (moveEvent: MouseEvent) => {
+        if (!isResizing) return;
+        const dw = moveEvent.clientX - resizeStartX;
+        const dh = moveEvent.clientY - resizeStartY;
+        
+        const newW = Math.max(120, resizeStartW + dw);
+        const newH = Math.max(80, resizeStartH + dh);
+        
+        noteEl.style.setProperty("width", `${newW}px`);
+        noteEl.style.setProperty("height", `${newH}px`);
+      };
+
+      const onResizeUp = () => {
+        if (!isResizing) return;
+        isResizing = false;
+        document.removeEventListener("mousemove", onResizeMove);
+        document.removeEventListener("mouseup", onResizeUp);
+
+        const currentNotes = this.activeNotes.get(leafId);
+        const data = currentNotes?.get(note.id);
+        if (data) {
+          data.w = noteEl.clientWidth;
+          data.h = noteEl.clientHeight;
+          this.saveNotes(view, currentNotes!);
+        }
+      };
+
+      document.addEventListener("mousemove", onResizeMove);
+      document.addEventListener("mouseup", onResizeUp);
+    };
+
+    // Drag position implementation
     let isDragging = false;
     let dragStartX = 0;
     let dragStartY = 0;
@@ -342,7 +438,7 @@ export class SpatialOverlayManager {
       if (data?.locked) return;
 
       if (e.target === contentEl) return;
-      if (e.target === lockBtn || e.target === deleteBtn || e.target === rotateHandle) return;
+      if (e.target === lockBtn || e.target === deleteBtn || e.target === rotateHandle || e.target === resizeHandle) return;
 
       isDragging = true;
       dragStartX = e.clientX;
@@ -384,11 +480,12 @@ export class SpatialOverlayManager {
     headerEl.addEventListener("mousedown", onMouseDown);
     noteEl.addEventListener("mousedown", (e) => {
       overlayEl.appendChild(noteEl);
-      if (e.target !== contentEl) {
+      if (e.target !== contentEl && e.target !== resizeHandle) {
         onMouseDown(e);
       }
     });
 
+    // Rotation implementation
     let isRotating = false;
 
     rotateHandle.onmousedown = (e) => {
@@ -412,6 +509,7 @@ export class SpatialOverlayManager {
       };
 
       const onRotateUp = () => {
+        if (!isRotating) return;
         isRotating = false;
         document.removeEventListener("mousemove", onRotateMove);
         document.removeEventListener("mouseup", onRotateUp);
@@ -431,20 +529,6 @@ export class SpatialOverlayManager {
       document.addEventListener("mousemove", onRotateMove);
       document.addEventListener("mouseup", onRotateUp);
     };
-
-    noteEl.addEventListener("mouseup", () => {
-      const currentNotes = this.activeNotes.get(leafId);
-      const data = currentNotes?.get(note.id);
-      if (data && !data.locked) {
-        const w = noteEl.clientWidth;
-        const h = noteEl.clientHeight;
-        if (w !== data.w || h !== data.h) {
-          data.w = w;
-          data.h = h;
-          this.saveNotes(view, currentNotes!);
-        }
-      }
-    });
 
     contentEl.onblur = () => {
       const currentNotes = this.activeNotes.get(leafId);
@@ -474,18 +558,31 @@ export class SpatialOverlayManager {
 
     const lockBtn = noteEl.querySelector(".concrete-lock-btn") as HTMLElement;
     if (lockBtn) {
-      lockBtn.textContent = note.locked ? "🔒" : "🔓";
+      lockBtn.innerHTML = note.locked ? ICON_LOCK : ICON_UNLOCK;
       lockBtn.title = note.locked ? "Unlock note" : "Lock note";
     }
     contentEl.contentEditable = note.locked ? "false" : "true";
 
-    const bgColour = defaults.noteColour || "#fffae6";
-    const textColour = defaults.textColour || "var(--text-normal)";
-    const fontSize = defaults.textSize ? (defaults.textSize.endsWith("px") ? defaults.textSize : `${defaults.textSize}px`) : "14px";
+    // Apply styles or fallbacks
+    if (defaults.noteColour) {
+      noteEl.style.setProperty("background-color", defaults.noteColour);
+      noteEl.style.removeProperty("border-color");
+    } else {
+      noteEl.style.removeProperty("background-color");
+    }
 
-    noteEl.style.setProperty("background-color", bgColour);
-    noteEl.style.setProperty("color", textColour);
-    noteEl.style.setProperty("font-size", fontSize);
+    if (defaults.textColour) {
+      noteEl.style.setProperty("color", defaults.textColour);
+    } else {
+      noteEl.style.removeProperty("color");
+    }
+
+    if (defaults.textSize) {
+      const fs = defaults.textSize.endsWith("px") ? defaults.textSize : `${defaults.textSize}px`;
+      noteEl.style.setProperty("font-size", fs);
+    } else {
+      noteEl.style.removeProperty("font-size");
+    }
   }
 
   public async spawnNote(view: MarkdownView, x: number, y: number) {
@@ -494,15 +591,29 @@ export class SpatialOverlayManager {
     const id = Date.now().toString();
 
     const { defaults } = await parseNotesFromView(this.plugin.app, view, this.plugin.settings.globalVars);
-    let defaultW = 100;
-    let defaultH = 100;
-    if (defaults.noteSize) {
-      const parts = defaults.noteSize.split("x");
+    
+    // Resolve merged settings and document defaults
+    const sizeStr = defaults.noteSize || this.plugin.settings.defaultNoteSize || "200x150";
+    let defaultW = 200;
+    let defaultH = 150;
+    if (sizeStr) {
+      const parts = sizeStr.split("x");
       if (parts.length === 2) {
-        defaultW = parseInt(parts[0] || "100") || 100;
-        defaultH = parseInt(parts[1] || "100") || 100;
+        defaultW = parseInt(parts[0] || "200") || 200;
+        defaultH = parseInt(parts[1] || "150") || 150;
+      } else {
+        const val = parseInt(sizeStr) || 200;
+        defaultW = val;
+        defaultH = val;
       }
     }
+
+    const resolvedDefaults: NoteDefaults = {
+      textSize: defaults.textSize || this.plugin.settings.defaultNoteTextSize || "14px",
+      textColour: defaults.textColour || this.plugin.settings.defaultNoteTextColour || "",
+      noteSize: sizeStr,
+      noteColour: defaults.noteColour || this.plugin.settings.defaultNoteColour || ""
+    };
 
     const newNote: StickyNoteData = {
       id,
@@ -520,7 +631,7 @@ export class SpatialOverlayManager {
 
     const overlayEl = this.activeOverlays.get(leafId);
     if (overlayEl) {
-      const noteEl = this.createNoteDOM(leafId, view, newNote, defaults, overlayEl);
+      const noteEl = this.createNoteDOM(leafId, view, newNote, resolvedDefaults, overlayEl);
       overlayEl.appendChild(noteEl);
       const contentEl = noteEl.querySelector(".concrete-note-content") as HTMLElement;
       contentEl?.focus();
@@ -530,24 +641,40 @@ export class SpatialOverlayManager {
   }
 
   private saveNotes(view: MarkdownView, notes: Map<string, StickyNoteData>) {
+    const leafId = ((view.leaf as unknown) as IdentifiableLeaf).id;
+    this.pendingSaveLeaves.add(leafId);
+
     if (this.saveTimeout) activeWindow.clearTimeout(this.saveTimeout);
     this.saveTimeout = activeWindow.setTimeout(async () => {
       const file = view.file;
-      if (!file) return;
-      
-      const currentContent = view.editor ? view.editor.getValue() : await this.plugin.app.vault.read(file);
-      const newContent = updateNotesInDocument(currentContent, notes);
-      
-      if (view.editor) {
-        const cursor = view.editor.getCursor();
-        const scrollInfo = view.editor.getScrollInfo();
-        view.editor.setValue(newContent);
-        view.editor.setCursor(cursor);
-        view.editor.scrollTo(0, scrollInfo.top);
-      } else {
-        await this.plugin.app.vault.modify(file, newContent);
+      if (!file) {
+        this.pendingSaveLeaves.delete(leafId);
+        return;
       }
-    }, 1000);
+      
+      try {
+        const currentContent = view.editor ? view.editor.getValue() : await this.plugin.app.vault.read(file);
+        const newContent = updateNotesInDocument(currentContent, notes);
+        
+        if (view.editor) {
+          if (currentContent !== newContent) {
+            const cursor = view.editor.getCursor();
+            const scrollInfo = view.editor.getScrollInfo();
+            view.editor.setValue(newContent);
+            view.editor.setCursor(cursor);
+            view.editor.scrollTo(0, scrollInfo.top);
+          }
+        } else {
+          await this.plugin.app.vault.modify(file, newContent);
+        }
+      } catch (err) {
+        console.error("Failed to save sticky notes:", err);
+      } finally {
+        this.pendingSaveLeaves.delete(leafId);
+        // Force a final reconcile check now that files are cleanly written
+        void this.reconcile();
+      }
+    }, 300); // 300ms responsive debounce
   }
 
   public destroyAll() {
@@ -557,5 +684,6 @@ export class SpatialOverlayManager {
     }
     this.activeOverlays.clear();
     this.activeNotes.clear();
+    this.pendingSaveLeaves.clear();
   }
 }
