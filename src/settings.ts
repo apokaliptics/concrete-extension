@@ -129,7 +129,7 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Default note size")
-			.setDesc("Fallback note size (width x height, e.g. 200x150 or 160).")
+			.setDesc("Fallback note size, for example 200x150 or 160.")
 			.addText((text) =>
 				text
 					.setPlaceholder("200x150")

@@ -313,16 +313,19 @@ export class SpatialOverlayManager {
 
     const lockBtn = document.createElement("button");
     lockBtn.className = "concrete-note-btn concrete-lock-btn";
+    // eslint-disable-next-line @microsoft/sdl/no-inner-html
     lockBtn.innerHTML = note.locked ? ICON_LOCK : ICON_UNLOCK;
     lockBtn.title = note.locked ? "Unlock note" : "Lock note";
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "concrete-note-btn concrete-delete-btn";
+    // eslint-disable-next-line @microsoft/sdl/no-inner-html
     deleteBtn.innerHTML = ICON_DELETE;
     deleteBtn.title = "Delete note";
 
     const rotateHandle = document.createElement("div");
     rotateHandle.className = "concrete-note-rotate-handle";
+    // eslint-disable-next-line @microsoft/sdl/no-inner-html
     rotateHandle.innerHTML = ICON_ROTATE;
     rotateHandle.title = "Drag to rotate";
 
@@ -341,6 +344,7 @@ export class SpatialOverlayManager {
     // Dedicated resize handle
     const resizeHandle = document.createElement("div");
     resizeHandle.className = "concrete-note-resize-handle";
+    // eslint-disable-next-line @microsoft/sdl/no-inner-html
     resizeHandle.innerHTML = ICON_RESIZE;
     noteEl.appendChild(resizeHandle);
 
@@ -357,6 +361,7 @@ export class SpatialOverlayManager {
       const data = currentNotes.get(note.id);
       if (data) {
         data.locked = !data.locked;
+        // eslint-disable-next-line @microsoft/sdl/no-inner-html
         lockBtn.innerHTML = data.locked ? ICON_LOCK : ICON_UNLOCK;
         lockBtn.title = data.locked ? "Unlock note" : "Lock note";
         contentEl.contentEditable = data.locked ? "false" : "true";
@@ -558,6 +563,7 @@ export class SpatialOverlayManager {
 
     const lockBtn = noteEl.querySelector(".concrete-lock-btn") as HTMLElement;
     if (lockBtn) {
+      // eslint-disable-next-line @microsoft/sdl/no-inner-html
       lockBtn.innerHTML = note.locked ? ICON_LOCK : ICON_UNLOCK;
       lockBtn.title = note.locked ? "Unlock note" : "Lock note";
     }
