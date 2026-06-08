@@ -4,6 +4,10 @@ A reactive variable system, spatial overlay workspace, and structural outliner p
 
 Define custom text wrappers, inline color styles, CSS variables, and structural layouts directly inside your notes using a simple, readable syntax. Create floating sticky notes, copy styled content to external apps, and protect LaTeX from formatting collisions — all from a single `:::vars` block.
 
+> [!WARNING]
+> This plugin is currently in **Beta** and there may be bugs. If you encounter any issues, please report them on the [GitHub Issues](https://github.com/apokaliptics/concrete-extension/issues) page.
+
+
 ## Features
 
 ### Core editor
