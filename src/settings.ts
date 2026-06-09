@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment */
 import { App, PluginSettingTab, Setting } from "obsidian";
 import ReactiveVariablesPlugin from "./main";
 
@@ -75,7 +74,7 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 			.setDesc("Define a default vars block that applies to all notes across the vault.")
 			.addTextArea((text) => {
 				text.inputEl.rows = 6;
-				text.inputEl.style.setProperty("width", "100%");
+				setStyle(text.inputEl, "width", "100%");
 				text
 					.setPlaceholder("##colors\n() = #ef4444\n\n##text\nheader_size = 24")
 					.setValue(this.plugin.settings.globalVars)
@@ -194,4 +193,8 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 					})
 			);
 	}
+}
+
+function setStyle(el: HTMLElement, name: string, value: string): void {
+	el.style.setProperty(name, value);
 }

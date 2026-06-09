@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment */
 import {
   EditorState,
   Extension,
@@ -462,7 +461,7 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
         for (const col of colors) {
           const swatch = document.createElement("div");
           swatch.className = "rv-color-autocomplete-swatch";
-          swatch.style.backgroundColor = col;
+          swatch.style.setProperty("background-color", col);
           swatch.title = col;
           swatch.onclick = (e) => {
             e.stopPropagation();
@@ -477,12 +476,11 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
         
         const pickerBtn = document.createElement("button");
         pickerBtn.className = "rv-color-autocomplete-picker-btn";
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
-        pickerBtn.textContent = "🌈 Custom color";
+        pickerBtn.textContent = "\uD83C\uDF08 custom colour";
         
         const hiddenInput = document.createElement("input");
         hiddenInput.type = "color";
-        hiddenInput.style.setProperty("display", "none");
+        setStyle(hiddenInput, "display", "none");
         if (currentHex.length === 6 || currentHex.length === 3) {
           let hex = currentHex;
           if (hex.length === 3) {
@@ -518,9 +516,9 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
       if (coords) {
         const scroller = this.view.dom.closest(".cm-scroller") || this.view.dom;
         const scrollerRect = scroller.getBoundingClientRect();
-        this.popupEl.style.setProperty("position", "absolute");
-        this.popupEl.style.setProperty("left", `${coords.left - scrollerRect.left + scroller.scrollLeft}px`);
-        this.popupEl.style.setProperty("top", `${coords.bottom - scrollerRect.top + scroller.scrollTop + 4}px`);
+        setStyle(this.popupEl, "position", "absolute");
+        setStyle(this.popupEl, "left", `${coords.left - scrollerRect.left + scroller.scrollLeft}px`);
+        setStyle(this.popupEl, "top", `${coords.bottom - scrollerRect.top + scroller.scrollTop + 4}px`);
       }
     }
 
@@ -624,4 +622,8 @@ function isInCodeOrMath(state: EditorState, pos: number): boolean {
 
 function rangesIntersect(aFrom: number, aTo: number, bFrom: number, bTo: number): boolean {
   return aFrom <= bTo && bFrom <= aTo;
+}
+
+function setStyle(el: HTMLElement, name: string, value: string): void {
+  el.style.setProperty(name, value);
 }

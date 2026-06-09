@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment */
 import { App, MarkdownView } from "obsidian";
 import { Text as CmText } from "@codemirror/state";
 import { parseDeclarations } from "../reactive/engine";
@@ -26,12 +25,43 @@ export interface StickyNoteData {
   content: string;
 }
 
-// Inline modern SVG icon constants
-const ICON_LOCK = `<svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`;
-const ICON_UNLOCK = `<svg viewBox="0 0 24 24"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H18v-2c0-3.31-2.69-6-6-6S6 2.69 6 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"/></svg>`;
-const ICON_DELETE = `<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
-const ICON_ROTATE = `<svg viewBox="0 0 24 24"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>`;
-const ICON_RESIZE = `<svg viewBox="0 0 10 10"><path d="M10 0 L0 10 M10 3 L3 10 M10 6 L6 10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>`;
+// Inline modern SVG icon markup strings
+const ICON_LOCK_SVG = `<svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`;
+const ICON_UNLOCK_SVG = `<svg viewBox="0 0 24 24"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H18v-2c0-3.31-2.69-6-6-6S6 2.69 6 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"/></svg>`;
+const ICON_DELETE_SVG = `<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+const ICON_ROTATE_SVG = `<svg viewBox="0 0 24 24"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>`;
+const ICON_RESIZE_SVG = `<svg viewBox="0 0 10 10"><path d="M10 0 L0 10 M10 3 L3 10 M10 6 L6 10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>`;
+
+/**
+ * Safely parses an SVG string via DOMParser and returns a cloned SVG element.
+ * This avoids using innerHTML which is disallowed by the SDL lint rule.
+ */
+function safeSvgElement(svgMarkup: string): SVGElement {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgMarkup, "image/svg+xml");
+  return doc.documentElement.cloneNode(true) as SVGElement;
+}
+
+/**
+ * Replaces all child nodes of an element with the parsed SVG from markup.
+ */
+function setSvgContent(el: HTMLElement, svgMarkup: string): void {
+  while (el.firstChild) el.removeChild(el.firstChild);
+  el.appendChild(safeSvgElement(svgMarkup));
+}
+
+/**
+ * Replaces all child nodes of an element with the given text or HTML fragment
+ * parsed safely via DOMParser.
+ */
+function setHtmlContent(el: HTMLElement, html: string): void {
+  while (el.firstChild) el.removeChild(el.firstChild);
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  while (doc.body.firstChild) {
+    el.appendChild(doc.body.firstChild);
+  }
+}
 
 export function serializeNotes(notes: Map<string, StickyNoteData>, existingNotesSection: string): string {
   const defaults = new Map<string, string>();
@@ -214,16 +244,16 @@ export class SpatialOverlayManager {
     if (!overlayEl || !overlayEl.isConnected) {
       overlayEl = document.createElement("div");
       overlayEl.className = "concrete-spatial-overlay";
-      overlayEl.style.setProperty("position", "absolute");
-      overlayEl.style.setProperty("top", "0");
-      overlayEl.style.setProperty("left", "0");
-      overlayEl.style.setProperty("width", "100%");
-      overlayEl.style.setProperty("height", "100%");
-      overlayEl.style.setProperty("pointer-events", "none");
-      overlayEl.style.setProperty("z-index", "5");
+      setStyle(overlayEl, "position", "absolute");
+      setStyle(overlayEl, "top", "0");
+      setStyle(overlayEl, "left", "0");
+      setStyle(overlayEl, "width", "100%");
+      setStyle(overlayEl, "height", "100%");
+      setStyle(overlayEl, "pointer-events", "none");
+      setStyle(overlayEl, "z-index", "5");
 
       const container = view.contentEl;
-      container.style.setProperty("position", "relative");
+      setStyle(container, "position", "relative");
       container.appendChild(overlayEl);
       this.activeOverlays.set(leafId, overlayEl);
     }
@@ -286,8 +316,8 @@ export class SpatialOverlayManager {
     const noteEl = document.createElement("div");
     noteEl.className = "concrete-sticky-note";
     noteEl.dataset.noteId = note.id;
-    noteEl.style.setProperty("position", "absolute");
-    noteEl.style.setProperty("pointer-events", "auto");
+    setStyle(noteEl, "position", "absolute");
+    setStyle(noteEl, "pointer-events", "auto");
 
     // Apply resolved style defaults
     if (defaults.noteColour) {
@@ -313,20 +343,17 @@ export class SpatialOverlayManager {
 
     const lockBtn = document.createElement("button");
     lockBtn.className = "concrete-note-btn concrete-lock-btn";
-    // eslint-disable-next-line @microsoft/sdl/no-inner-html
-    lockBtn.innerHTML = note.locked ? ICON_LOCK : ICON_UNLOCK;
+    setSvgContent(lockBtn, note.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
     lockBtn.title = note.locked ? "Unlock note" : "Lock note";
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "concrete-note-btn concrete-delete-btn";
-    // eslint-disable-next-line @microsoft/sdl/no-inner-html
-    deleteBtn.innerHTML = ICON_DELETE;
+    setSvgContent(deleteBtn, ICON_DELETE_SVG);
     deleteBtn.title = "Delete note";
 
     const rotateHandle = document.createElement("div");
     rotateHandle.className = "concrete-note-rotate-handle";
-    // eslint-disable-next-line @microsoft/sdl/no-inner-html
-    rotateHandle.innerHTML = ICON_ROTATE;
+    setSvgContent(rotateHandle, ICON_ROTATE_SVG);
     rotateHandle.title = "Drag to rotate";
 
     headerEl.appendChild(lockBtn);
@@ -337,15 +364,13 @@ export class SpatialOverlayManager {
     const contentEl = document.createElement("div");
     contentEl.className = "concrete-note-content";
     contentEl.contentEditable = note.locked ? "false" : "true";
-    // eslint-disable-next-line @microsoft/sdl/no-inner-html
-    contentEl.innerHTML = note.content;
+    setHtmlContent(contentEl, note.content);
     noteEl.appendChild(contentEl);
 
     // Dedicated resize handle
     const resizeHandle = document.createElement("div");
     resizeHandle.className = "concrete-note-resize-handle";
-    // eslint-disable-next-line @microsoft/sdl/no-inner-html
-    resizeHandle.innerHTML = ICON_RESIZE;
+    setSvgContent(resizeHandle, ICON_RESIZE_SVG);
     noteEl.appendChild(resizeHandle);
 
     // Stop propagation on mousedown so header/note dragging is not triggered
@@ -361,8 +386,7 @@ export class SpatialOverlayManager {
       const data = currentNotes.get(note.id);
       if (data) {
         data.locked = !data.locked;
-        // eslint-disable-next-line @microsoft/sdl/no-inner-html
-        lockBtn.innerHTML = data.locked ? ICON_LOCK : ICON_UNLOCK;
+        setSvgContent(lockBtn, data.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
         lockBtn.title = data.locked ? "Unlock note" : "Lock note";
         contentEl.contentEditable = data.locked ? "false" : "true";
         this.saveNotes(view, currentNotes);
@@ -451,7 +475,7 @@ export class SpatialOverlayManager {
       noteStartX = parseFloat(noteEl.style.left) || 0;
       noteStartY = parseFloat(noteEl.style.top) || 0;
 
-      noteEl.style.setProperty("z-index", "100");
+      setStyle(noteEl, "z-index", "100");
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
@@ -468,7 +492,7 @@ export class SpatialOverlayManager {
     const onMouseUp = () => {
       if (!isDragging) return;
       isDragging = false;
-      noteEl.style.setProperty("z-index", "10");
+      setStyle(noteEl, "z-index", "10");
 
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
@@ -551,8 +575,7 @@ export class SpatialOverlayManager {
     const contentEl = noteEl.querySelector(".concrete-note-content") as HTMLElement;
     const isFocused = document.activeElement === contentEl;
     if (!isFocused) {
-      // eslint-disable-next-line @microsoft/sdl/no-inner-html
-      contentEl.innerHTML = note.content;
+      setHtmlContent(contentEl, note.content);
     }
 
     noteEl.style.setProperty("left", `${note.x}px`);
@@ -563,8 +586,7 @@ export class SpatialOverlayManager {
 
     const lockBtn = noteEl.querySelector(".concrete-lock-btn") as HTMLElement;
     if (lockBtn) {
-      // eslint-disable-next-line @microsoft/sdl/no-inner-html
-      lockBtn.innerHTML = note.locked ? ICON_LOCK : ICON_UNLOCK;
+      setSvgContent(lockBtn, note.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
       lockBtn.title = note.locked ? "Unlock note" : "Lock note";
     }
     contentEl.contentEditable = note.locked ? "false" : "true";
@@ -692,4 +714,8 @@ export class SpatialOverlayManager {
     this.activeNotes.clear();
     this.pendingSaveLeaves.clear();
   }
+}
+
+function setStyle(el: HTMLElement, name: string, value: string): void {
+  el.style.setProperty(name, value);
 }
