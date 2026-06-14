@@ -156,14 +156,14 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
       if (!update.docChanged) return;
       const vs = update.startState.field(varStateField);
       if (!shouldReparse(update, vs.blocks)) return;
-      if (this.timer) activeWindow.clearTimeout(this.timer);
-      this.timer = activeWindow.setTimeout(() => {
+      if (this.timer) window.clearTimeout(this.timer);
+      this.timer = window.setTimeout(() => {
         const options = update.state.facet(optionsFacet);
         const { rules, blocks } = parseDeclarations(update.state.doc, options?.globalVars);
         update.view.dispatch({ effects: reparseEffect.of({ rules, blocks }) });
       }, 200);
     }
-    destroy() { if (this.timer) activeWindow.clearTimeout(this.timer); }
+    destroy() { if (this.timer) window.clearTimeout(this.timer); }
   }
 );
 
@@ -203,7 +203,7 @@ class FoldToggleWidget extends WidgetType {
     btn.addEventListener("mousedown", (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      activeWindow.setTimeout(() => {
+      window.setTimeout(() => {
         view.dispatch({ effects: [toggleFoldEffect.of(ln)] });
       }, 0);
     });
@@ -221,7 +221,7 @@ class BulletWidget extends WidgetType {
     return other.level === this.level;
   }
   toDOM() {
-    const span = document.createElement("span");
+    const span = activeDocument.createElement("span");
     span.className = `rv-bullet rv-bullet-${this.level}`;
     span.textContent = BULLET_CHARS[Math.min(this.level - 1, BULLET_CHARS.length - 1)] + " ";
     return span;
@@ -447,7 +447,7 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
 
     private showPopup(hashPos: number, currentHex: string) {
       if (!this.popupEl) {
-        this.popupEl = document.createElement("div");
+        this.popupEl = activeDocument.createElement("div");
         this.popupEl.className = "rv-color-autocomplete-popup";
         
         const colors = [
@@ -456,10 +456,10 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
           "#6366f1", "#8b5cf6", "#ec4899"
         ];
 
-        const grid = document.createElement("div");
+        const grid = activeDocument.createElement("div");
         grid.className = "rv-color-autocomplete-grid";
         for (const col of colors) {
-          const swatch = document.createElement("div");
+          const swatch = activeDocument.createElement("div");
           swatch.className = "rv-color-autocomplete-swatch";
           swatch.style.setProperty("background-color", col);
           swatch.title = col;
@@ -471,14 +471,14 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
         }
         this.popupEl.appendChild(grid);
 
-        const bottomBar = document.createElement("div");
+        const bottomBar = activeDocument.createElement("div");
         bottomBar.className = "rv-color-autocomplete-bottom";
         
-        const pickerBtn = document.createElement("button");
+        const pickerBtn = activeDocument.createElement("button");
         pickerBtn.className = "rv-color-autocomplete-picker-btn";
         pickerBtn.textContent = "\uD83C\uDF08 custom colour";
         
-        const hiddenInput = document.createElement("input");
+        const hiddenInput = activeDocument.createElement("input");
         hiddenInput.type = "color";
         setStyle(hiddenInput, "display", "none");
         if (currentHex.length === 6 || currentHex.length === 3) {

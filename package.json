@@ -1,6 +1,6 @@
 {
   "name": "concrete-extension",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Reactive variable system for Markdown notes.",
   "main": "main.js",
   "type": "module",

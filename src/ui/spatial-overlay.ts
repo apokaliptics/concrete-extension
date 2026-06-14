@@ -242,7 +242,7 @@ export class SpatialOverlayManager {
   private async ensureOverlay(leafId: string, view: MarkdownView) {
     let overlayEl = this.activeOverlays.get(leafId);
     if (!overlayEl || !overlayEl.isConnected) {
-      overlayEl = document.createElement("div");
+      overlayEl = activeDocument.createElement("div");
       overlayEl.className = "concrete-spatial-overlay";
       setStyle(overlayEl, "position", "absolute");
       setStyle(overlayEl, "top", "0");
@@ -313,7 +313,7 @@ export class SpatialOverlayManager {
     defaults: NoteDefaults,
     overlayEl: HTMLElement
   ): HTMLElement {
-    const noteEl = document.createElement("div");
+    const noteEl = activeDocument.createElement("div");
     noteEl.className = "concrete-sticky-note";
     noteEl.dataset.noteId = note.id;
     setStyle(noteEl, "position", "absolute");
@@ -338,20 +338,20 @@ export class SpatialOverlayManager {
     noteEl.style.setProperty("height", `${note.h}px`);
     noteEl.style.setProperty("transform", `rotate(${note.r}deg)`);
 
-    const headerEl = document.createElement("div");
+    const headerEl = activeDocument.createElement("div");
     headerEl.className = "concrete-note-header";
 
-    const lockBtn = document.createElement("button");
+    const lockBtn = activeDocument.createElement("button");
     lockBtn.className = "concrete-note-btn concrete-lock-btn";
     setSvgContent(lockBtn, note.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
     lockBtn.title = note.locked ? "Unlock note" : "Lock note";
 
-    const deleteBtn = document.createElement("button");
+    const deleteBtn = activeDocument.createElement("button");
     deleteBtn.className = "concrete-note-btn concrete-delete-btn";
     setSvgContent(deleteBtn, ICON_DELETE_SVG);
     deleteBtn.title = "Delete note";
 
-    const rotateHandle = document.createElement("div");
+    const rotateHandle = activeDocument.createElement("div");
     rotateHandle.className = "concrete-note-rotate-handle";
     setSvgContent(rotateHandle, ICON_ROTATE_SVG);
     rotateHandle.title = "Drag to rotate";
@@ -361,14 +361,14 @@ export class SpatialOverlayManager {
     headerEl.appendChild(deleteBtn);
     noteEl.appendChild(headerEl);
 
-    const contentEl = document.createElement("div");
+    const contentEl = activeDocument.createElement("div");
     contentEl.className = "concrete-note-content";
     contentEl.contentEditable = note.locked ? "false" : "true";
     setHtmlContent(contentEl, note.content);
     noteEl.appendChild(contentEl);
 
     // Dedicated resize handle
-    const resizeHandle = document.createElement("div");
+    const resizeHandle = activeDocument.createElement("div");
     resizeHandle.className = "concrete-note-resize-handle";
     setSvgContent(resizeHandle, ICON_RESIZE_SVG);
     noteEl.appendChild(resizeHandle);
@@ -438,8 +438,8 @@ export class SpatialOverlayManager {
       const onResizeUp = () => {
         if (!isResizing) return;
         isResizing = false;
-        document.removeEventListener("mousemove", onResizeMove);
-        document.removeEventListener("mouseup", onResizeUp);
+        activeDocument.removeEventListener("mousemove", onResizeMove);
+        activeDocument.removeEventListener("mouseup", onResizeUp);
 
         const currentNotes = this.activeNotes.get(leafId);
         const data = currentNotes?.get(note.id);
@@ -450,8 +450,8 @@ export class SpatialOverlayManager {
         }
       };
 
-      document.addEventListener("mousemove", onResizeMove);
-      document.addEventListener("mouseup", onResizeUp);
+      activeDocument.addEventListener("mousemove", onResizeMove);
+      activeDocument.addEventListener("mouseup", onResizeUp);
     };
 
     // Drag position implementation
@@ -477,8 +477,8 @@ export class SpatialOverlayManager {
 
       setStyle(noteEl, "z-index", "100");
 
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      activeDocument.addEventListener("mousemove", onMouseMove);
+      activeDocument.addEventListener("mouseup", onMouseUp);
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -494,8 +494,8 @@ export class SpatialOverlayManager {
       isDragging = false;
       setStyle(noteEl, "z-index", "10");
 
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      activeDocument.removeEventListener("mousemove", onMouseMove);
+      activeDocument.removeEventListener("mouseup", onMouseUp);
 
       const currentNotes = this.activeNotes.get(leafId);
       const data = currentNotes?.get(note.id);
@@ -540,8 +540,8 @@ export class SpatialOverlayManager {
       const onRotateUp = () => {
         if (!isRotating) return;
         isRotating = false;
-        document.removeEventListener("mousemove", onRotateMove);
-        document.removeEventListener("mouseup", onRotateUp);
+        activeDocument.removeEventListener("mousemove", onRotateMove);
+        activeDocument.removeEventListener("mouseup", onRotateUp);
 
         const currentNotes = this.activeNotes.get(leafId);
         const data = currentNotes?.get(note.id);
@@ -555,8 +555,8 @@ export class SpatialOverlayManager {
         }
       };
 
-      document.addEventListener("mousemove", onRotateMove);
-      document.addEventListener("mouseup", onRotateUp);
+      activeDocument.addEventListener("mousemove", onRotateMove);
+      activeDocument.addEventListener("mouseup", onRotateUp);
     };
 
     contentEl.onblur = () => {
@@ -573,7 +573,7 @@ export class SpatialOverlayManager {
 
   private updateNoteDOM(noteEl: HTMLElement, note: StickyNoteData, defaults: NoteDefaults) {
     const contentEl = noteEl.querySelector(".concrete-note-content") as HTMLElement;
-    const isFocused = document.activeElement === contentEl;
+    const isFocused = activeDocument.activeElement === contentEl;
     if (!isFocused) {
       setHtmlContent(contentEl, note.content);
     }
@@ -672,8 +672,8 @@ export class SpatialOverlayManager {
     const leafId = ((view.leaf as unknown) as IdentifiableLeaf).id;
     this.pendingSaveLeaves.add(leafId);
 
-    if (this.saveTimeout) activeWindow.clearTimeout(this.saveTimeout);
-    this.saveTimeout = activeWindow.setTimeout(async () => {
+    if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
+    this.saveTimeout = window.setTimeout(async () => {
       const file = view.file;
       if (!file) {
         this.pendingSaveLeaves.delete(leafId);
@@ -706,7 +706,7 @@ export class SpatialOverlayManager {
   }
 
   public destroyAll() {
-    if (this.saveTimeout) activeWindow.clearTimeout(this.saveTimeout);
+    if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
     for (const el of this.activeOverlays.values()) {
       el.remove();
     }

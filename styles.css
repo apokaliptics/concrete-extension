@@ -247,23 +247,23 @@
 .rv-bullet-4, .rv-bullet-5, .rv-bullet-6 { color: var(--text-faint); opacity: 0.75; }
 
 /* ── Reading View List Bullet Interception ── */
-.markdown-preview-view ul > li::marker {
-	content: "•  " !important;
+body .markdown-preview-view.markdown-preview-view ul > li::marker {
+	content: "•  ";
 }
-.markdown-preview-view ul ul > li::marker {
-	content: "◦  " !important;
+body .markdown-preview-view.markdown-preview-view ul ul > li::marker {
+	content: "◦  ";
 }
-.markdown-preview-view ul ul ul > li::marker {
-	content: "▸  " !important;
+body .markdown-preview-view.markdown-preview-view ul ul ul > li::marker {
+	content: "▸  ";
 }
-.markdown-preview-view ul ul ul ul > li::marker {
-	content: "▹  " !important;
+body .markdown-preview-view.markdown-preview-view ul ul ul ul > li::marker {
+	content: "▹  ";
 }
-.markdown-preview-view ul ul ul ul ul > li::marker {
-	content: "⁃  " !important;
+body .markdown-preview-view.markdown-preview-view ul ul ul ul ul > li::marker {
+	content: "⁃  ";
 }
-.markdown-preview-view ul ul ul ul ul ul > li::marker {
-	content: "·  " !important;
+body .markdown-preview-view.markdown-preview-view ul ul ul ul ul ul > li::marker {
+	content: "·  ";
 }
 
 /* ── Spatial Overlay & Sticky Notes ── */
