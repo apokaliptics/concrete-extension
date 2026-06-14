@@ -673,35 +673,37 @@ export class SpatialOverlayManager {
     this.pendingSaveLeaves.add(leafId);
 
     if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
-    this.saveTimeout = window.setTimeout(async () => {
-      const file = view.file;
-      if (!file) {
-        this.pendingSaveLeaves.delete(leafId);
-        return;
-      }
-      
-      try {
-        const currentContent = view.editor ? view.editor.getValue() : await this.plugin.app.vault.read(file);
-        const newContent = updateNotesInDocument(currentContent, notes);
-        
-        if (view.editor) {
-          if (currentContent !== newContent) {
-            const cursor = view.editor.getCursor();
-            const scrollInfo = view.editor.getScrollInfo();
-            view.editor.setValue(newContent);
-            view.editor.setCursor(cursor);
-            view.editor.scrollTo(0, scrollInfo.top);
-          }
-        } else {
-          await this.plugin.app.vault.modify(file, newContent);
+    this.saveTimeout = window.setTimeout(() => {
+      void (async () => {
+        const file = view.file;
+        if (!file) {
+          this.pendingSaveLeaves.delete(leafId);
+          return;
         }
-      } catch (err) {
-        console.error("Failed to save sticky notes:", err);
-      } finally {
-        this.pendingSaveLeaves.delete(leafId);
-        // Force a final reconcile check now that files are cleanly written
-        void this.reconcile();
-      }
+        
+        try {
+          const currentContent = view.editor ? view.editor.getValue() : await this.plugin.app.vault.read(file);
+          const newContent = updateNotesInDocument(currentContent, notes);
+          
+          if (view.editor) {
+            if (currentContent !== newContent) {
+              const cursor = view.editor.getCursor();
+              const scrollInfo = view.editor.getScrollInfo();
+              view.editor.setValue(newContent);
+              view.editor.setCursor(cursor);
+              view.editor.scrollTo(0, scrollInfo.top);
+            }
+          } else {
+            await this.plugin.app.vault.modify(file, newContent);
+          }
+        } catch (err) {
+          console.error("Failed to save sticky notes:", err);
+        } finally {
+          this.pendingSaveLeaves.delete(leafId);
+          // Force a final reconcile check now that files are cleanly written
+          void this.reconcile();
+        }
+      })();
     }, 300); // 300ms responsive debounce
   }
 
