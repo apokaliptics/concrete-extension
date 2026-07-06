@@ -20,7 +20,7 @@ import {
   getTextSizeCssVar,
   hasEnabledStyles
 } from "./reactive/utils";
-import { SpatialOverlayManager } from "./ui/spatial-overlay";
+import { SpatialOverlayManager, CreateStickyNoteModal, parseNotesFromView } from "./ui/spatial-overlay";
 import { LayoutPresetModal } from "./templates";
 
 interface IdentifiableLeaf {
@@ -178,6 +178,21 @@ export default class ReactiveVariablesPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "create-sticky-note",
+      name: "Create sticky note",
+      editorCallback: async (editor, view) => {
+        if (view instanceof MarkdownView) {
+          const { defaults } = await parseNotesFromView(this.app, view, this.settings.globalVars);
+          const defaultSize = defaults.noteSize || this.settings.defaultNoteSize || "200x150";
+
+          new CreateStickyNoteModal(this.app, defaultSize, (name, size) => {
+            void this.spatialOverlayManager.addNoteFromUI(view, name, size);
+          }).open();
+        }
+      }
+    });
+
     // Register spatial notes events
     this.app.workspace.onLayoutReady(() => {
       void this.spatialOverlayManager.reconcile();
@@ -210,14 +225,16 @@ export default class ReactiveVariablesPlugin extends Plugin {
               .setTitle("Copy content without variables")
               .setIcon("copy")
               .onClick(async () => {
+                const selection = editor.getSelection();
                 const docContent = editor.getValue();
                 const doc = CmText.of(docContent.split("\n"));
                 const { rules } = parseDeclarations(doc, this.settings.globalVars);
                 
-                const plainText = stripVariables(docContent);
+                const targetText = selection ? selection : docContent;
+                const plainText = stripVariables(targetText);
                 const wrappers = Array.from(rules.values()).filter(r => r.type === "wrapper" && hasEnabledStyles(r, this.settings));
-                const matches = findWrapperMatchesInText(docContent, 0, wrappers);
-                const htmlText = compileToHTML(docContent, 0, docContent.length, matches, rules, this.settings);
+                const matches = findWrapperMatchesInText(targetText, 0, wrappers);
+                const htmlText = compileToHTML(targetText, 0, targetText.length, matches, rules, this.settings);
                 
                 const blobPlain = new Blob([plainText], { type: "text/plain" });
                 const blobHTML = new Blob([htmlText], { type: "text/html" });
@@ -233,16 +250,13 @@ export default class ReactiveVariablesPlugin extends Plugin {
             item
               .setTitle("Create sticky note")
               .setIcon("pin")
-              .onClick(() => {
-                const overlayEl = this.spatialOverlayManager.getOverlayElement(((view.leaf as unknown) as IdentifiableLeaf).id);
-                if (overlayEl) {
-                  const rect = overlayEl.getBoundingClientRect();
-                  const x = this.spatialOverlayManager.lastContextClick.x - rect.left;
-                  const y = this.spatialOverlayManager.lastContextClick.y - rect.top;
-                  void this.spatialOverlayManager.spawnNote(view, x, y);
-                } else {
-                  void this.spatialOverlayManager.spawnNote(view, 100, 100);
-                }
+              .onClick(async () => {
+                const { defaults } = await parseNotesFromView(this.app, view, this.settings.globalVars);
+                const defaultSize = defaults.noteSize || this.settings.defaultNoteSize || "200x150";
+
+                new CreateStickyNoteModal(this.app, defaultSize, (name, size) => {
+                  void this.spatialOverlayManager.addNoteFromUI(view, name, size);
+                }).open();
               });
           });
         }

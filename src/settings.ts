@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import ReactiveVariablesPlugin from "./main";
+import { PRESETS } from "./templates";
 
 export interface ReactiveVariablesSettings {
 	enableEditor: boolean;
@@ -68,6 +69,36 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("Global layout preset")
+			.setDesc("Choose a pre-configured template variables scheme to apply globally.")
+			.addDropdown((dropdown) => {
+				dropdown.addOption("custom", "Custom / None");
+				for (const preset of PRESETS) {
+					dropdown.addOption(preset.id, preset.name);
+				}
+
+				const matchedPreset = PRESETS.find(
+					(p) => p.varsBlock.trim() === this.plugin.settings.globalVars.trim()
+				);
+				dropdown.setValue(matchedPreset ? matchedPreset.id : "custom");
+
+				dropdown.onChange(async (value) => {
+					if (value === "custom") {
+						this.plugin.settings.globalVars = "";
+						await this.plugin.saveSettings();
+						this.display();
+					} else {
+						const preset = PRESETS.find((p) => p.id === value);
+						if (preset) {
+							this.plugin.settings.globalVars = preset.varsBlock;
+							await this.plugin.saveSettings();
+							this.display();
+						}
+					}
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Global configuration defaults")

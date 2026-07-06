@@ -149,6 +149,24 @@ Then use them in your note:
 
 **Result:** The wrapper symbols are hidden. You only see the styled text.
 
+**Simplified Color Names & Letter Codes:**
+Rather than using hex codes, you can also use standard color names or simple letter abbreviations directly in your variables (e.g. `() = pr`, `-- = red`, `bl = pink`):
+- `hp` / `black` / `pure black` &rarr; `#000000`
+- `wt` / `white` &rarr; `#FFFFFF`
+- `rd` / `red` &rarr; `#FF0000`
+- `gn` / `green` &rarr; `#00FF00`
+- `bl` / `blue` &rarr; `#0000FF`
+- `yl` / `yellow` &rarr; `#FFFF00`
+- `mg` / `magenta` &rarr; `#FF00FF`
+- `cy` / `cyan` &rarr; `#00FFFF`
+- `or` / `orange` &rarr; `#FFA500`
+- `pl` / `purple` &rarr; `#800080`
+- `pr` / `pink` &rarr; `#FFC0CB`
+- `tl` / `teal` &rarr; `#008080`
+- `br` / `brown` &rarr; `#A52A2A`
+
+These will automatically resolve to their respective HEX color values under the hood.
+
 ### 4. Text wrappers (under `##text`)
 
 Define wrappers that apply CSS classes instead of colors.
@@ -289,7 +307,7 @@ Configure defaults with a `#notes` section in your `:::vars` block.
 
 ### 12. Global defaults
 
-Open **Settings → Concrete** and use the **Global configuration defaults** text area to define variables that apply to every note. These act as a universal base — local `:::vars` blocks in each note inherit and can override them.
+Open **Settings &rarr; Concrete** and use the **Global layout preset** dropdown or the **Global configuration defaults** text area to define variables that apply to every note. These act as a universal base &mdash; local `:::vars` blocks in each note inherit and can override them.
 
 ### 13. Layout presets
 
@@ -304,6 +322,7 @@ The plugin settings panel is organized into four categories:
 ### Core configuration
 - **Enable editor features** — Adds inline values, tooltips, and completions in the editor.
 - **Enable preview substitutions** — Applies reactive variables in reading view.
+- **Global layout preset** — Allows selecting a pre-configured template variables scheme to apply globally across the vault.
 - **Global configuration defaults** — Text area for vault-wide variable definitions.
 
 ### Editor behaviors

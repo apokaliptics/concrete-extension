@@ -1,6 +1,6 @@
-import { App, MarkdownView } from "obsidian";
+import { App, MarkdownView, Modal, Setting } from "obsidian";
 import { Text as CmText } from "@codemirror/state";
-import { parseDeclarations } from "../reactive/engine";
+import { parseDeclarations, resolveColorNameOrAbbrev } from "../reactive/engine";
 import ReactiveVariablesPlugin from "../main";
 
 interface IdentifiableLeaf {
@@ -16,13 +16,78 @@ export interface NoteDefaults {
 
 export interface StickyNoteData {
   id: string;
-  x: number;
-  y: number;
+  name: string;
   w: number;
   h: number;
-  r: number;
-  locked: boolean;
-  content: string;
+  x: number;
+  y: number;
+  placed: boolean;
+}
+
+export class CreateStickyNoteModal extends Modal {
+  private name: string = "";
+  private size: string = "";
+
+  constructor(
+    app: App,
+    private defaultSize: string,
+    private onSubmit: (name: string, size: string) => void
+  ) {
+    super(app);
+    this.size = defaultSize;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "Create sticky note" });
+
+    new Setting(contentEl)
+      .setName("Note name")
+      .setDesc("The title / label of the sticky note.")
+      .addText((text) => {
+        text.setPlaceholder("e.g. formulas");
+        text.onChange((val) => {
+          this.name = val.trim();
+        });
+        setTimeout(() => text.inputEl.focus(), 100);
+      });
+
+    new Setting(contentEl)
+      .setName("Sizing")
+      .setDesc("The width and height of the note (e.g. 200x150 or 30x30).")
+      .addText((text) => {
+        text.setValue(this.size);
+        text.onChange((val) => {
+          this.size = val.trim();
+        });
+      });
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn
+          .setButtonText("Create")
+          .setCta()
+          .onClick(() => {
+            if (this.name) {
+              this.onSubmit(this.name, this.size);
+              this.close();
+            } else {
+              window.alert("Please enter a note name.");
+            }
+          })
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Cancel")
+          .onClick(() => this.close())
+      );
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
 }
 
 // Inline modern SVG icon markup strings
@@ -74,7 +139,7 @@ export function serializeNotes(notes: Map<string, StickyNoteData>, existingNotes
     if (eqIdx === -1) continue;
     const key = trimmed.substring(0, eqIdx).trim();
     const val = trimmed.substring(eqIdx + 1).trim();
-    if (key && !key.startsWith("note_")) {
+    if (key === "text_size" || key === "text_colour" || key === "note_size" || key === "note_colour") {
       defaults.set(key, val);
     }
   }
@@ -84,8 +149,11 @@ export function serializeNotes(notes: Map<string, StickyNoteData>, existingNotes
     outputLines.push(`${key} = ${val}`);
   }
   for (const note of notes.values()) {
-    const encodedContent = encodeURIComponent(note.content);
-    outputLines.push(`note_${note.id} = ${Math.round(note.x)},${Math.round(note.y)},${Math.round(note.w)},${Math.round(note.h)},${Math.round(note.r)},${note.locked},${encodedContent}`);
+    if (note.placed) {
+      outputLines.push(`${note.name} = ${Math.round(note.w)},${Math.round(note.h)},${Math.round(note.x)},${Math.round(note.y)}`);
+    } else {
+      outputLines.push(`${note.name} = ${Math.round(note.w)},${Math.round(note.h)}`);
+    }
   }
   return outputLines.join("\n");
 }
@@ -180,18 +248,20 @@ export async function parseNotesFromView(app: App, view: MarkdownView, globalVar
       else if (key === "text_colour") defaults.textColour = lastStyle.val;
       else if (key === "note_size") defaults.noteSize = lastStyle.val;
       else if (key === "note_colour") defaults.noteColour = lastStyle.val;
-      else if (key.startsWith("note_")) {
-        const id = key.substring(5);
+      else {
         const parts = lastStyle.val.split(",");
-        if (parts.length >= 7) {
-          const x = parseFloat(parts[0] || "0");
-          const y = parseFloat(parts[1] || "0");
-          const w = parseFloat(parts[2] || "120");
-          const h = parseFloat(parts[3] || "80");
-          const r = parseFloat(parts[4] || "0");
-          const locked = parts[5] === "true";
-          const contentStr = decodeURIComponent(parts.slice(6).join(",") || "");
-          notes.set(id, { id, x, y, w, h, r, locked, content: contentStr });
+        if (parts.length >= 2) {
+          const w = parseFloat(parts[0] || "200") || 200;
+          const h = parseFloat(parts[1] || "150") || 150;
+          let x = 0;
+          let y = 0;
+          let placed = false;
+          if (parts.length >= 4) {
+            x = parseFloat(parts[2] || "0");
+            y = parseFloat(parts[3] || "0");
+            placed = true;
+          }
+          notes.set(key, { id: key, name: key, w, h, x, y, placed });
         }
       }
     }
@@ -206,6 +276,8 @@ export class SpatialOverlayManager {
   private pendingSaveLeaves = new Set<string>();
   private saveTimeout: number | null = null;
   public lastContextClick = { x: 100, y: 100 };
+  private placingNotes = new Set<string>();
+  private placementCleanups = new Map<string, () => void>();
 
   constructor(private plugin: ReactiveVariablesPlugin) {
     this.plugin.registerDomEvent(activeWindow, "contextmenu", (e: MouseEvent) => {
@@ -267,9 +339,9 @@ export class SpatialOverlayManager {
     // Resolve merged settings and document defaults
     const resolvedDefaults: NoteDefaults = {
       textSize: defaults.textSize || this.plugin.settings.defaultNoteTextSize || "14px",
-      textColour: defaults.textColour || this.plugin.settings.defaultNoteTextColour || "",
+      textColour: resolveColorNameOrAbbrev(defaults.textColour || this.plugin.settings.defaultNoteTextColour || ""),
       noteSize: defaults.noteSize || this.plugin.settings.defaultNoteSize || "200x150",
-      noteColour: defaults.noteColour || this.plugin.settings.defaultNoteColour || ""
+      noteColour: resolveColorNameOrAbbrev(defaults.noteColour || this.plugin.settings.defaultNoteColour || "")
     };
 
     let notesToRender = notes;
@@ -298,6 +370,11 @@ export class SpatialOverlayManager {
       } else {
         this.updateNoteDOM(noteEl, note, resolvedDefaults);
       }
+
+      if (!note.placed && !this.placingNotes.has(note.id)) {
+        this.startPlacingNote(leafId, view, note, noteEl, overlayEl);
+      }
+
       existingMap.delete(note.id);
     }
 
@@ -336,63 +413,52 @@ export class SpatialOverlayManager {
     noteEl.style.setProperty("top", `${note.y}px`);
     noteEl.style.setProperty("width", `${note.w}px`);
     noteEl.style.setProperty("height", `${note.h}px`);
-    noteEl.style.setProperty("transform", `rotate(${note.r}deg)`);
 
-    const headerEl = activeDocument.createElement("div");
-    headerEl.className = "concrete-note-header";
+    // Note name body (centered text)
+    const bodyEl = activeDocument.createElement("div");
+    bodyEl.className = "concrete-note-body";
+    bodyEl.textContent = note.name;
+    setStyle(bodyEl, "display", "flex");
+    setStyle(bodyEl, "align-items", "center");
+    setStyle(bodyEl, "justify-content", "center");
+    setStyle(bodyEl, "width", "100%");
+    setStyle(bodyEl, "height", "100%");
+    setStyle(bodyEl, "text-align", "center");
+    setStyle(bodyEl, "padding", "8px");
+    setStyle(bodyEl, "font-weight", "500");
+    setStyle(bodyEl, "word-break", "break-word");
+    setStyle(bodyEl, "overflow", "hidden");
+    setStyle(bodyEl, "user-select", "none");
+    noteEl.appendChild(bodyEl);
 
-    const lockBtn = activeDocument.createElement("button");
-    lockBtn.className = "concrete-note-btn concrete-lock-btn";
-    setSvgContent(lockBtn, note.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
-    lockBtn.title = note.locked ? "Unlock note" : "Lock note";
-
+    // Small delete button in top-right
     const deleteBtn = activeDocument.createElement("button");
     deleteBtn.className = "concrete-note-btn concrete-delete-btn";
     setSvgContent(deleteBtn, ICON_DELETE_SVG);
     deleteBtn.title = "Delete note";
+    setStyle(deleteBtn, "position", "absolute");
+    setStyle(deleteBtn, "top", "4px");
+    setStyle(deleteBtn, "right", "4px");
+    setStyle(deleteBtn, "opacity", "0");
+    setStyle(deleteBtn, "transition", "opacity 0.15s ease");
+    noteEl.appendChild(deleteBtn);
 
-    const rotateHandle = activeDocument.createElement("div");
-    rotateHandle.className = "concrete-note-rotate-handle";
-    setSvgContent(rotateHandle, ICON_ROTATE_SVG);
-    rotateHandle.title = "Drag to rotate";
+    // Show delete button on note hover
+    noteEl.addEventListener("mouseenter", () => {
+      if (note.placed) setStyle(deleteBtn, "opacity", "0.6");
+    });
+    noteEl.addEventListener("mouseleave", () => {
+      setStyle(deleteBtn, "opacity", "0");
+    });
+    deleteBtn.addEventListener("mouseenter", () => {
+      setStyle(deleteBtn, "opacity", "1");
+    });
+    deleteBtn.addEventListener("mouseleave", () => {
+      if (note.placed) setStyle(deleteBtn, "opacity", "0.6");
+    });
 
-    headerEl.appendChild(lockBtn);
-    headerEl.appendChild(rotateHandle);
-    headerEl.appendChild(deleteBtn);
-    noteEl.appendChild(headerEl);
-
-    const contentEl = activeDocument.createElement("div");
-    contentEl.className = "concrete-note-content";
-    contentEl.contentEditable = note.locked ? "false" : "true";
-    setHtmlContent(contentEl, note.content);
-    noteEl.appendChild(contentEl);
-
-    // Dedicated resize handle
-    const resizeHandle = activeDocument.createElement("div");
-    resizeHandle.className = "concrete-note-resize-handle";
-    setSvgContent(resizeHandle, ICON_RESIZE_SVG);
-    noteEl.appendChild(resizeHandle);
-
-    // Stop propagation on mousedown so header/note dragging is not triggered
-    lockBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    // Stop propagation on mousedown/click for delete button
     deleteBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    rotateHandle.addEventListener("mousedown", (e) => e.stopPropagation());
-    resizeHandle.addEventListener("mousedown", (e) => e.stopPropagation());
-
-    lockBtn.onclick = (e) => {
-      e.stopPropagation();
-      const currentNotes = this.activeNotes.get(leafId);
-      if (!currentNotes) return;
-      const data = currentNotes.get(note.id);
-      if (data) {
-        data.locked = !data.locked;
-        setSvgContent(lockBtn, data.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
-        lockBtn.title = data.locked ? "Unlock note" : "Lock note";
-        contentEl.contentEditable = data.locked ? "false" : "true";
-        this.saveNotes(view, currentNotes);
-      }
-    };
-
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
       const currentNotes = this.activeNotes.get(leafId);
@@ -402,57 +468,24 @@ export class SpatialOverlayManager {
       this.saveNotes(view, currentNotes);
     };
 
-    // Drag-to-resize handle implementation
-    let isResizing = false;
-    let resizeStartX = 0;
-    let resizeStartY = 0;
-    let resizeStartW = 0;
-    let resizeStartH = 0;
-
-    resizeHandle.onmousedown = (e) => {
+    // Double-click to rename note
+    noteEl.addEventListener("dblclick", (e) => {
       e.stopPropagation();
-      e.preventDefault();
-
-      const currentNotes = this.activeNotes.get(leafId);
-      const data = currentNotes?.get(note.id);
-      if (data?.locked) return;
-
-      isResizing = true;
-      resizeStartX = e.clientX;
-      resizeStartY = e.clientY;
-      resizeStartW = noteEl.clientWidth;
-      resizeStartH = noteEl.clientHeight;
-
-      const onResizeMove = (moveEvent: MouseEvent) => {
-        if (!isResizing) return;
-        const dw = moveEvent.clientX - resizeStartX;
-        const dh = moveEvent.clientY - resizeStartY;
-        
-        const newW = Math.max(120, resizeStartW + dw);
-        const newH = Math.max(80, resizeStartH + dh);
-        
-        noteEl.style.setProperty("width", `${newW}px`);
-        noteEl.style.setProperty("height", `${newH}px`);
-      };
-
-      const onResizeUp = () => {
-        if (!isResizing) return;
-        isResizing = false;
-        activeDocument.removeEventListener("mousemove", onResizeMove);
-        activeDocument.removeEventListener("mouseup", onResizeUp);
-
-        const currentNotes = this.activeNotes.get(leafId);
-        const data = currentNotes?.get(note.id);
-        if (data) {
-          data.w = noteEl.clientWidth;
-          data.h = noteEl.clientHeight;
-          this.saveNotes(view, currentNotes!);
+      if (!note.placed) return; // Don't rename while placing
+      const newName = window.prompt("Enter new note name:", note.name);
+      if (newName !== null) {
+        const cleanName = newName.trim();
+        if (cleanName && cleanName !== note.name) {
+          const currentNotes = this.activeNotes.get(leafId);
+          if (currentNotes) {
+            currentNotes.delete(note.id);
+            const updatedNote = { ...note, id: cleanName, name: cleanName };
+            currentNotes.set(cleanName, updatedNote);
+            this.saveNotes(view, currentNotes);
+          }
         }
-      };
-
-      activeDocument.addEventListener("mousemove", onResizeMove);
-      activeDocument.addEventListener("mouseup", onResizeUp);
-    };
+      }
+    });
 
     // Drag position implementation
     let isDragging = false;
@@ -462,12 +495,8 @@ export class SpatialOverlayManager {
     let noteStartY = 0;
 
     const onMouseDown = (e: MouseEvent) => {
-      const currentNotes = this.activeNotes.get(leafId);
-      const data = currentNotes?.get(note.id);
-      if (data?.locked) return;
-
-      if (e.target === contentEl) return;
-      if (e.target === lockBtn || e.target === deleteBtn || e.target === rotateHandle || e.target === resizeHandle) return;
+      if (!note.placed) return; // Don't drag while placing
+      if (e.target === deleteBtn || deleteBtn.contains(e.target as Node)) return;
 
       isDragging = true;
       dragStartX = e.clientX;
@@ -477,119 +506,50 @@ export class SpatialOverlayManager {
 
       setStyle(noteEl, "z-index", "100");
 
-      activeDocument.addEventListener("mousemove", onMouseMove);
-      activeDocument.addEventListener("mouseup", onMouseUp);
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      noteEl.style.setProperty("left", `${noteStartX + dx}px`);
-      noteEl.style.setProperty("top", `${noteStartY + dy}px`);
-    };
-
-    const onMouseUp = () => {
-      if (!isDragging) return;
-      isDragging = false;
-      setStyle(noteEl, "z-index", "10");
-
-      activeDocument.removeEventListener("mousemove", onMouseMove);
-      activeDocument.removeEventListener("mouseup", onMouseUp);
-
-      const currentNotes = this.activeNotes.get(leafId);
-      const data = currentNotes?.get(note.id);
-      if (data) {
-        data.x = parseFloat(noteEl.style.left) || 0;
-        data.y = parseFloat(noteEl.style.top) || 0;
-        this.saveNotes(view, currentNotes!);
-      }
-    };
-
-    headerEl.addEventListener("mousedown", onMouseDown);
-    noteEl.addEventListener("mousedown", (e) => {
-      overlayEl.appendChild(noteEl);
-      if (e.target !== contentEl && e.target !== resizeHandle) {
-        onMouseDown(e);
-      }
-    });
-
-    // Rotation implementation
-    let isRotating = false;
-
-    rotateHandle.onmousedown = (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-
-      const currentNotes = this.activeNotes.get(leafId);
-      const data = currentNotes?.get(note.id);
-      if (data?.locked) return;
-
-      isRotating = true;
-      const rect = noteEl.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-
-      const onRotateMove = (moveEvent: MouseEvent) => {
-        if (!isRotating) return;
-        const angle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
-        const deg = angle * (180 / Math.PI) - 45;
-        noteEl.style.setProperty("transform", `rotate(${deg}deg)`);
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        if (!isDragging) return;
+        const dx = moveEvent.clientX - dragStartX;
+        const dy = moveEvent.clientY - dragStartY;
+        noteEl.style.setProperty("left", `${noteStartX + dx}px`);
+        noteEl.style.setProperty("top", `${noteStartY + dy}px`);
       };
 
-      const onRotateUp = () => {
-        if (!isRotating) return;
-        isRotating = false;
-        activeDocument.removeEventListener("mousemove", onRotateMove);
-        activeDocument.removeEventListener("mouseup", onRotateUp);
+      const onMouseUp = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        setStyle(noteEl, "z-index", "10");
+
+        activeDocument.removeEventListener("mousemove", onMouseMove);
+        activeDocument.removeEventListener("mouseup", onMouseUp);
 
         const currentNotes = this.activeNotes.get(leafId);
         const data = currentNotes?.get(note.id);
         if (data) {
-          const transform = noteEl.style.transform;
-          const match = /rotate\(([-\d.]+)deg\)/.exec(transform);
-          if (match) {
-            data.r = parseFloat(match[1] || "0");
-          }
+          data.x = Math.round(parseFloat(noteEl.style.left) || 0);
+          data.y = Math.round(parseFloat(noteEl.style.top) || 0);
           this.saveNotes(view, currentNotes!);
         }
       };
 
-      activeDocument.addEventListener("mousemove", onRotateMove);
-      activeDocument.addEventListener("mouseup", onRotateUp);
+      activeDocument.addEventListener("mousemove", onMouseMove);
+      activeDocument.addEventListener("mouseup", onMouseUp);
     };
 
-    contentEl.onblur = () => {
-      const currentNotes = this.activeNotes.get(leafId);
-      const data = currentNotes?.get(note.id);
-      if (data && !data.locked) {
-        data.content = contentEl.innerHTML;
-        this.saveNotes(view, currentNotes!);
-      }
-    };
+    noteEl.addEventListener("mousedown", onMouseDown);
 
     return noteEl;
   }
 
   private updateNoteDOM(noteEl: HTMLElement, note: StickyNoteData, defaults: NoteDefaults) {
-    const contentEl = noteEl.querySelector(".concrete-note-content") as HTMLElement;
-    const isFocused = activeDocument.activeElement === contentEl;
-    if (!isFocused) {
-      setHtmlContent(contentEl, note.content);
+    const bodyEl = noteEl.querySelector(".concrete-note-body") as HTMLElement;
+    if (bodyEl) {
+      bodyEl.textContent = note.name;
     }
 
     noteEl.style.setProperty("left", `${note.x}px`);
     noteEl.style.setProperty("top", `${note.y}px`);
     noteEl.style.setProperty("width", `${note.w}px`);
     noteEl.style.setProperty("height", `${note.h}px`);
-    noteEl.style.setProperty("transform", `rotate(${note.r}deg)`);
-
-    const lockBtn = noteEl.querySelector(".concrete-lock-btn") as HTMLElement;
-    if (lockBtn) {
-      setSvgContent(lockBtn, note.locked ? ICON_LOCK_SVG : ICON_UNLOCK_SVG);
-      lockBtn.title = note.locked ? "Unlock note" : "Lock note";
-    }
-    contentEl.contentEditable = note.locked ? "false" : "true";
 
     // Apply styles or fallbacks
     if (defaults.noteColour) {
@@ -613,15 +573,71 @@ export class SpatialOverlayManager {
     }
   }
 
-  public async spawnNote(view: MarkdownView, x: number, y: number) {
+  private startPlacingNote(
+    leafId: string,
+    view: MarkdownView,
+    note: StickyNoteData,
+    noteEl: HTMLElement,
+    overlayEl: HTMLElement
+  ) {
+    this.placingNotes.add(note.id);
+    setStyle(noteEl, "pointer-events", "none");
+
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = overlayEl.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      noteEl.style.setProperty("left", `${clickX - note.w / 2}px`);
+      noteEl.style.setProperty("top", `${clickY - note.h / 2}px`);
+    };
+
+    const cleanup = () => {
+      activeDocument.removeEventListener("mousemove", onMouseMove);
+      activeDocument.removeEventListener("click", onMouseClick, true);
+      this.placingNotes.delete(note.id);
+      this.placementCleanups.delete(note.id);
+    };
+
+    const onMouseClick = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = overlayEl.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      cleanup();
+      setStyle(noteEl, "pointer-events", "auto");
+
+      const currentNotes = this.activeNotes.get(leafId);
+      if (currentNotes) {
+        const data = currentNotes.get(note.id);
+        if (data) {
+          data.x = Math.round(clickX - note.w / 2);
+          data.y = Math.round(clickY - note.h / 2);
+          data.placed = true;
+          this.saveNotes(view, currentNotes);
+        }
+      }
+    };
+
+    this.placementCleanups.set(note.id, cleanup);
+
+    // Initial position matching context click
+    const rect = overlayEl.getBoundingClientRect();
+    const initX = this.lastContextClick.x - rect.left;
+    const initY = this.lastContextClick.y - rect.top;
+    noteEl.style.setProperty("left", `${initX - note.w / 2}px`);
+    noteEl.style.setProperty("top", `${initY - note.h / 2}px`);
+
+    activeDocument.addEventListener("mousemove", onMouseMove);
+    activeDocument.addEventListener("click", onMouseClick, true);
+  }
+
+  public async addNoteFromUI(view: MarkdownView, name: string, sizeStr: string) {
     const leafId = ((view.leaf as unknown) as IdentifiableLeaf).id;
     const currentNotes = this.activeNotes.get(leafId) || new Map<string, StickyNoteData>();
-    const id = Date.now().toString();
 
-    const { defaults } = await parseNotesFromView(this.plugin.app, view, this.plugin.settings.globalVars);
-    
-    // Resolve merged settings and document defaults
-    const sizeStr = defaults.noteSize || this.plugin.settings.defaultNoteSize || "200x150";
     let defaultW = 200;
     let defaultH = 150;
     if (sizeStr) {
@@ -630,42 +646,40 @@ export class SpatialOverlayManager {
         defaultW = parseInt(parts[0] || "200") || 200;
         defaultH = parseInt(parts[1] || "150") || 150;
       } else {
-        const val = parseInt(sizeStr) || 200;
-        defaultW = val;
-        defaultH = val;
+        const parts2 = sizeStr.split(",");
+        if (parts2.length === 2) {
+          defaultW = parseInt(parts2[0] || "200") || 200;
+          defaultH = parseInt(parts2[1] || "150") || 150;
+        } else {
+          const val = parseInt(sizeStr) || 200;
+          defaultW = val;
+          defaultH = val;
+        }
       }
     }
 
-    const resolvedDefaults: NoteDefaults = {
-      textSize: defaults.textSize || this.plugin.settings.defaultNoteTextSize || "14px",
-      textColour: defaults.textColour || this.plugin.settings.defaultNoteTextColour || "",
-      noteSize: sizeStr,
-      noteColour: defaults.noteColour || this.plugin.settings.defaultNoteColour || ""
-    };
-
     const newNote: StickyNoteData = {
-      id,
-      x,
-      y,
+      id: name,
+      name,
       w: defaultW,
       h: defaultH,
-      r: 0,
-      locked: false,
-      content: "Double click to edit"
+      x: 0,
+      y: 0,
+      placed: false
     };
 
-    currentNotes.set(id, newNote);
+    currentNotes.set(name, newNote);
     this.activeNotes.set(leafId, currentNotes);
-
-    const overlayEl = this.activeOverlays.get(leafId);
-    if (overlayEl) {
-      const noteEl = this.createNoteDOM(leafId, view, newNote, resolvedDefaults, overlayEl);
-      overlayEl.appendChild(noteEl);
-      const contentEl = noteEl.querySelector(".concrete-note-content") as HTMLElement;
-      contentEl?.focus();
-    }
-
     this.saveNotes(view, currentNotes);
+  }
+
+  public async spawnNote(view: MarkdownView, x: number, y: number) {
+    const { defaults } = await parseNotesFromView(this.plugin.app, view, this.plugin.settings.globalVars);
+    const defaultSize = defaults.noteSize || this.plugin.settings.defaultNoteSize || "200x150";
+
+    new CreateStickyNoteModal(this.plugin.app, defaultSize, (name, size) => {
+      void this.addNoteFromUI(view, name, size);
+    }).open();
   }
 
   private saveNotes(view: MarkdownView, notes: Map<string, StickyNoteData>) {
@@ -700,15 +714,18 @@ export class SpatialOverlayManager {
           console.error("Failed to save sticky notes:", err);
         } finally {
           this.pendingSaveLeaves.delete(leafId);
-          // Force a final reconcile check now that files are cleanly written
           void this.reconcile();
         }
       })();
-    }, 300); // 300ms responsive debounce
+    }, 300);
   }
 
   public destroyAll() {
     if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
+    for (const cleanup of this.placementCleanups.values()) {
+      cleanup();
+    }
+    this.placementCleanups.clear();
     for (const el of this.activeOverlays.values()) {
       el.remove();
     }

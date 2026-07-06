@@ -1,6 +1,6 @@
 {
   "name": "concrete-extension",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Reactive variable system for Markdown notes.",
   "main": "main.js",
   "type": "module",
@@ -11,7 +11,7 @@
     "lint": "eslint ."
   },
   "keywords": [],
-  "license": "0-BSD",
+  "license": "UNLICENSED",
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.1",
     "@codemirror/language": "^6.12.3",

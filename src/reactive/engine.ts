@@ -102,8 +102,9 @@ export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEn
     const val = valRaw.trim();
     if (!key || !val) continue;
 
+    const resolvedVal = resolveColorNameOrAbbrev(val);
     // For global variables, we don't have document offsets (valFrom / valTo) for widgets, so we can set them to -1.
-    const style: RuleStyle = { val, section: currentSection, valFrom: -1, valTo: -1 };
+    const style: RuleStyle = { val: resolvedVal, section: currentSection, valFrom: -1, valTo: -1 };
 
     if (currentSection === "notes") {
       addCssRule(rules, key, style);
@@ -170,7 +171,8 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
     const valStart = doc.line(lineNo).from + equalsIdx + 1 + valRaw.indexOf(val);
     const valEnd = valStart + val.length;
 
-    const style: RuleStyle = { val, section: currentSection, valFrom: valStart, valTo: valEnd };
+    const resolvedVal = resolveColorNameOrAbbrev(val);
+    const style: RuleStyle = { val: resolvedVal, section: currentSection, valFrom: valStart, valTo: valEnd };
 
     if (currentSection === "notes") {
       addCssRule(rules, key, style);
@@ -313,7 +315,7 @@ function findLetterMatch(text: string, from: number, rule: RuleEntry) {
     const startIdx = text.indexOf(key, pos);
     if (startIdx === -1) return null;
 
-    if (startIdx > 0 && text.charAt(startIdx - 1) !== " ") { pos = startIdx + 1; continue; }
+    if (startIdx > 0 && /\w/.test(text.charAt(startIdx - 1))) { pos = startIdx + 1; continue; }
     const afterKey = startIdx + key.length;
     if (afterKey >= text.length || text.charAt(afterKey) !== " ") { pos = startIdx + 1; continue; }
 
@@ -323,7 +325,7 @@ function findLetterMatch(text: string, from: number, rule: RuleEntry) {
     if (endIdx === -1) return null;
 
     const fullEnd = endIdx + endMarker.length;
-    if (fullEnd < text.length && text.charAt(fullEnd) !== " ") { pos = startIdx + 1; continue; }
+    if (fullEnd < text.length && /\w/.test(text.charAt(fullEnd))) { pos = startIdx + 1; continue; }
 
     return { startIdx, endIdx: fullEnd, contentStart, contentEnd: endIdx };
   }
@@ -359,10 +361,53 @@ function findDeclarationBlocks(doc: Text): DeclBlockRange[] {
   return blocks;
 }
 
+const COLOR_NAME_MAP: Record<string, string> = {
+  // Abbreviations
+  "hp": "#000000",
+  "wt": "#FFFFFF",
+  "rd": "#FF0000",
+  "gn": "#00FF00",
+  "bl": "#0000FF",
+  "yl": "#FFFF00",
+  "mg": "#FF00FF",
+  "cy": "#00FFFF",
+  "or": "#FFA500",
+  "pl": "#800080",
+  "pr": "#FFC0CB",
+  "tl": "#008080",
+  "br": "#A52A2A",
+
+  // Full names
+  "black": "#000000",
+  "pure black": "#000000",
+  "white": "#FFFFFF",
+  "red": "#FF0000",
+  "green": "#00FF00",
+  "blue": "#0000FF",
+  "yellow": "#FFFF00",
+  "magenta": "#FF00FF",
+  "cyan": "#00FFFF",
+  "orange": "#FFA500",
+  "purple": "#800080",
+  "pink": "#FFC0CB",
+  "teal": "#008080",
+  "brown": "#A52A2A"
+};
+
+export function resolveColorNameOrAbbrev(val: string): string {
+  const normalized = val.trim().toLowerCase();
+  const mapped = COLOR_NAME_MAP[normalized];
+  if (mapped !== undefined) {
+    return mapped;
+  }
+  return val;
+}
+
 export function isColorString(val: string): boolean {
-  return /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(val) ||
-         /^rgba?\([^)]+\)$/i.test(val) ||
-         /^hsla?\([^)]+\)$/i.test(val);
+  const resolved = resolveColorNameOrAbbrev(val);
+  return /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(resolved) ||
+         /^rgba?\([^)]+\)$/i.test(resolved) ||
+         /^hsla?\([^)]+\)$/i.test(resolved);
 }
 
 export function containsImageMarkdown(text: string): boolean {
