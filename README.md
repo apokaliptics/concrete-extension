@@ -43,6 +43,9 @@ Define custom text wrappers, inline color styles, CSS variables, and structural 
 
 ### Spatial overlay system (Sticky notes)
 
+> [!WARNING]
+> The sticky notes function is currently undergoing fixes and is temporarily disabled.
+
 - **Floating canvas layer** — A non-destructive overlay layer sits above the document text. Right-click to create a sticky note at any position.
 - **Interactive notes** — Notes default to 100×100 pixels and support:
   - **Drag** anywhere across the overlay.

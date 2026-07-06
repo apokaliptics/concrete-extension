@@ -26,7 +26,7 @@ export const PRESETS: LayoutPreset[] = [
 header_size = 28
 ^^ = header
 
-#notes
+##notes
 text_size = 13
 text_colour = #1e3a8a
 note_size = 180x130
@@ -99,7 +99,7 @@ text_body_size = 15
 ^^ = header
 __ = bold
 
-#notes
+##notes
 text_size = 12
 text_colour = #0f172a
 note_size = 220x160
@@ -153,7 +153,7 @@ text_body_size = 16
 ^^ = header
 __ = italic
 
-#notes
+##notes
 text_size = 14
 text_colour = #431407
 note_size = 200x150
@@ -202,7 +202,7 @@ bl = #4f46e5
 text_header_size = 30
 ^^ = header
 
-#notes
+##notes
 text_size = 13
 text_colour = #4a044e
 note_size = 160

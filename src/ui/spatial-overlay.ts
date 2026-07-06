@@ -178,7 +178,7 @@ export function serializeNotes(notes: Map<string, StickyNoteData>, existingNotes
     }
   }
 
-  const outputLines = ["#notes"];
+  const outputLines = ["##notes"];
   for (const [key, val] of defaults) {
     outputLines.push(`${key} = ${val}`);
   }
@@ -211,7 +211,7 @@ export function updateNotesInDocument(content: string, notes: Map<string, Sticky
         break;
       }
       blockStartIdx = -1;
-    } else if (blockStartIdx !== -1 && line.toLowerCase().startsWith("#notes")) {
+    } else if (blockStartIdx !== -1 && (line.toLowerCase().startsWith("#notes") || line.toLowerCase().startsWith("##notes"))) {
       hasNotesHeader = true;
     }
   }
@@ -324,25 +324,7 @@ export class SpatialOverlayManager {
   }
 
   async reconcile() {
-    const leaves = this.plugin.app.workspace.getLeavesOfType("markdown");
-    const activeLeafIds = new Set<string>();
-
-    for (const leaf of leaves) {
-      const view = leaf.view as MarkdownView;
-      const leafId = ((leaf as unknown) as IdentifiableLeaf).id;
-      activeLeafIds.add(leafId);
-
-      await this.ensureOverlay(leafId, view);
-    }
-
-    for (const [leafId, el] of this.activeOverlays) {
-      if (!activeLeafIds.has(leafId)) {
-        el.remove();
-        this.activeOverlays.delete(leafId);
-        this.activeNotes.delete(leafId);
-        this.pendingSaveLeaves.delete(leafId);
-      }
-    }
+    return;
   }
 
   private async ensureOverlay(leafId: string, view: MarkdownView) {
@@ -356,7 +338,8 @@ export class SpatialOverlayManager {
       setStyle(overlayEl, "width", "100%");
       setStyle(overlayEl, "height", "100%");
       setStyle(overlayEl, "pointer-events", "none");
-      setStyle(overlayEl, "z-index", "5");
+      setStyle(overlayEl, "z-index", "100");
+      setStyle(overlayEl, "overflow", "visible");
 
       const container = view.contentEl;
       setStyle(container, "position", "relative");
@@ -579,8 +562,11 @@ export class SpatialOverlayManager {
       bodyEl.textContent = note.name;
     }
 
-    noteEl.style.setProperty("left", `${note.x}px`);
-    noteEl.style.setProperty("top", `${note.y}px`);
+    // Don't reset position while placement mode is tracking the cursor
+    if (!this.placingNotes.has(note.id)) {
+      noteEl.style.setProperty("left", `${note.x}px`);
+      noteEl.style.setProperty("top", `${note.y}px`);
+    }
     noteEl.style.setProperty("width", `${note.w}px`);
     noteEl.style.setProperty("height", `${note.h}px`);
 
@@ -747,7 +733,6 @@ export class SpatialOverlayManager {
           console.error("Failed to save sticky notes:", err);
         } finally {
           this.pendingSaveLeaves.delete(leafId);
-          void this.reconcile();
         }
       })();
     }, 300);

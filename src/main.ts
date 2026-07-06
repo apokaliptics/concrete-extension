@@ -174,6 +174,7 @@ export default class ReactiveVariablesPlugin extends Plugin {
       }
     });
 
+    /*
     this.addCommand({
       id: "create-sticky-note",
       name: "Create sticky note",
@@ -211,6 +212,7 @@ export default class ReactiveVariablesPlugin extends Plugin {
         void this.spatialOverlayManager.reconcile();
       })
     );
+    */
 
     // Register editor menu hooks for copy and sticky notes context options
     this.registerEvent(
@@ -242,19 +244,7 @@ export default class ReactiveVariablesPlugin extends Plugin {
               });
           });
 
-          menu.addItem((item) => {
-            item
-              .setTitle("Create sticky note")
-              .setIcon("pin")
-              .onClick(async () => {
-                const { defaults } = await parseNotesFromView(this.app, view, this.settings.globalVars);
-                const defaultSize = defaults.noteSize || this.settings.defaultNoteSize || "200x150";
 
-                new CreateStickyNoteModal(this.app, defaultSize, (name, size) => {
-                  void this.spatialOverlayManager.addNoteFromUI(view, name, size);
-                }).open();
-              });
-          });
         }
       })
     );

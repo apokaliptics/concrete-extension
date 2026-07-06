@@ -83,11 +83,13 @@ export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEn
         currentSection = "colors";
       } else if (sectionName === "text") {
         currentSection = "text";
+      } else if (sectionName === "notes" || sectionName === "note") {
+        currentSection = "notes";
       }
       continue;
     }
 
-    if (text.toLowerCase().startsWith("#notes")) {
+    if (text.toLowerCase().startsWith("#notes") || text.toLowerCase().startsWith("##notes")) {
       currentSection = "notes";
       continue;
     }
@@ -149,11 +151,13 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
         currentSection = "colors";
       } else if (sectionName === "text") {
         currentSection = "text";
+      } else if (sectionName === "notes" || sectionName === "note") {
+        currentSection = "notes";
       }
       continue;
     }
 
-    if (text.toLowerCase().startsWith("#notes")) {
+    if (text.toLowerCase().startsWith("#notes") || text.toLowerCase().startsWith("##notes")) {
       currentSection = "notes";
       continue;
     }
