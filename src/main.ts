@@ -23,10 +23,6 @@ import {
 import { SpatialOverlayManager, CreateStickyNoteModal, parseNotesFromView } from "./ui/spatial-overlay";
 import { LayoutPresetModal } from "./templates";
 
-interface IdentifiableLeaf {
-  id: string;
-}
-
 const SIDEBAR_STYLE_ID = "concrete-hide-pasted-images";
 const PASTED_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"];
 

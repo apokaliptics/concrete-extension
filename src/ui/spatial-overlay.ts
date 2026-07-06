@@ -1,4 +1,4 @@
-import { App, MarkdownView, Modal, Setting } from "obsidian";
+import { App, MarkdownView, Modal, Setting, Notice } from "obsidian";
 import { Text as CmText } from "@codemirror/state";
 import { parseDeclarations, resolveColorNameOrAbbrev } from "../reactive/engine";
 import ReactiveVariablesPlugin from "../main";
@@ -47,7 +47,7 @@ export class CreateStickyNoteModal extends Modal {
       .setName("Note name")
       .setDesc("The title / label of the sticky note.")
       .addText((text) => {
-        text.setPlaceholder("e.g. formulas");
+        text.setPlaceholder("Formulas");
         text.onChange((val) => {
           this.name = val.trim();
         });
@@ -74,7 +74,7 @@ export class CreateStickyNoteModal extends Modal {
               this.onSubmit(this.name, this.size);
               this.close();
             } else {
-              window.alert("Please enter a note name.");
+              new Notice("Please enter a note name.");
             }
           })
       )
@@ -91,11 +91,7 @@ export class CreateStickyNoteModal extends Modal {
 }
 
 // Inline modern SVG icon markup strings
-const ICON_LOCK_SVG = `<svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`;
-const ICON_UNLOCK_SVG = `<svg viewBox="0 0 24 24"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H18v-2c0-3.31-2.69-6-6-6S6 2.69 6 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"/></svg>`;
 const ICON_DELETE_SVG = `<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
-const ICON_ROTATE_SVG = `<svg viewBox="0 0 24 24"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>`;
-const ICON_RESIZE_SVG = `<svg viewBox="0 0 10 10"><path d="M10 0 L0 10 M10 3 L3 10 M10 6 L6 10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>`;
 
 /**
  * Safely parses an SVG string via DOMParser and returns a cloned SVG element.
@@ -115,16 +111,54 @@ function setSvgContent(el: HTMLElement, svgMarkup: string): void {
   el.appendChild(safeSvgElement(svgMarkup));
 }
 
-/**
- * Replaces all child nodes of an element with the given text or HTML fragment
- * parsed safely via DOMParser.
- */
-function setHtmlContent(el: HTMLElement, html: string): void {
-  while (el.firstChild) el.removeChild(el.firstChild);
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  while (doc.body.firstChild) {
-    el.appendChild(doc.body.firstChild);
+export class RenameStickyNoteModal extends Modal {
+  private name: string;
+  private onSubmit: (newName: string) => void;
+
+  constructor(app: App, currentName: string, onSubmit: (newName: string) => void) {
+    super(app);
+    this.name = currentName;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Rename sticky note" });
+
+    new Setting(contentEl)
+      .setName("Note name")
+      .addText((text) => {
+        text.setValue(this.name);
+        text.onChange((val) => {
+          this.name = val.trim();
+        });
+        setTimeout(() => text.inputEl.focus(), 100);
+      });
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn
+          .setButtonText("Rename")
+          .setCta()
+          .onClick(() => {
+            if (this.name) {
+              this.onSubmit(this.name);
+              this.close();
+            } else {
+              new Notice("Please enter a note name.");
+            }
+          })
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Cancel")
+          .onClick(() => this.close())
+      );
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -472,8 +506,7 @@ export class SpatialOverlayManager {
     noteEl.addEventListener("dblclick", (e) => {
       e.stopPropagation();
       if (!note.placed) return; // Don't rename while placing
-      const newName = window.prompt("Enter new note name:", note.name);
-      if (newName !== null) {
+      new RenameStickyNoteModal(this.plugin.app, note.name, (newName) => {
         const cleanName = newName.trim();
         if (cleanName && cleanName !== note.name) {
           const currentNotes = this.activeNotes.get(leafId);
@@ -484,7 +517,7 @@ export class SpatialOverlayManager {
             this.saveNotes(view, currentNotes);
           }
         }
-      }
+      }).open();
     });
 
     // Drag position implementation

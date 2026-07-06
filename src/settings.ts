@@ -74,7 +74,7 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 			.setName("Global layout preset")
 			.setDesc("Choose a pre-configured template variables scheme to apply globally.")
 			.addDropdown((dropdown) => {
-				dropdown.addOption("custom", "Custom / None");
+				dropdown.addOption("custom", "Custom / none");
 				for (const preset of PRESETS) {
 					dropdown.addOption(preset.id, preset.name);
 				}
