@@ -1,91 +1,100 @@
 # Concrete Extension
 
-A reactive variable system, spatial overlay workspace, and structural outliner plugin for Obsidian.
+A keyboard-first reactive variable, declarative rule engine, and structural formatting system for Obsidian.
 
-Define custom text wrappers, inline color styles, CSS variables, and structural layouts directly inside your notes using a simple, readable syntax. Create floating sticky notes, copy styled content to external apps, and protect LaTeX from formatting collisions — all from a single `:::vars` block.
+Define custom text wrappers, inline color styles, font families, declarative commands, CSS variables, and structural layouts directly inside your notes using a simple, readable syntax. Copy styled content to external apps and protect LaTeX from formatting collisions — all from a single `:::vars` block.
 
 > [!WARNING]
 > This plugin is currently in **Beta** and there may be bugs. If you encounter any issues, please report them on the [GitHub Issues](https://github.com/apokaliptics/concrete-extension/issues) page.
 
+---
 
 ## Features
 
-### Core editor
+### Core editor & reactive variables
 
 - **Custom text wrappers** — Turn `(text)` red, `"text"` blue, or `^text^` into a bold header by defining a simple rule.
-- **Letter wrappers** — Use letter pairs like `hh text hh` for highlighting. Letters must be spaced from the content to avoid false matches.
-- **Delimiter hiding** — Wrapper symbols are hidden in the rendered view. Click into the line to reveal the raw syntax.
+- **Letter & token wrappers** — Use alphanumeric tokens like `hh text hh` or `ft1 text ft1` for styling. Tokens are spaced from the content to avoid false matches with normal words.
+- **Delimiter hiding** — Delimiter symbols are hidden in rendered view. Moving your cursor onto the line reveals the raw syntax.
 - **Nested wrappers** — Combine multiple styles by nesting wrappers (e.g., `_&text&_`).
-- **Combined styles** — Define the same wrapper in both `##colors` and `##text` to stack a color *and* a text style simultaneously.
-- **Interactive color palette** — Every hex color in the editor gets a clickable swatch. Click to open the system color picker and update inline.
-- **CSS variable injection** — Keys like `header_size = 24` become CSS variables (`--header_size: 24px`) on the document container.
-- **Named text variables** — Define any text style name (e.g., `title`, `body`) and link it to a wrapper with `text_{name}_size`.
+- **Combined styles** — Define the same wrapper in both `##colors` and `##text` to stack color *and* text styling simultaneously.
+- **Interactive color palette** — Every hex color in your `:::vars` block gets a clickable swatch. Click to open the system color picker and update values inline.
+- **CSS variable injection** — Declarations like `header_size = 24` or `text_ft1_font = Inter` become standard CSS variables (`--header_size: 24px`, `--text_ft1_font: 'Inter', sans-serif`) on the document container.
+
+### Font variables in `##text`
+
+- **Token font assignment** — Assign fonts to reusable tokens:
+  ```yaml
+  ##text
+  ft1 = Inter
+  codefont = JetBrains Mono
+  text_quote_font = Merriweather
+  ```
+- **Inline token wrapping** — Wrap text directly with font tokens: `ft1 text in Inter ft1`.
+- **Active note canvas font** — Define `font = <family>` (e.g., `font = Arial` or `font = "Space Grotesk"`) under `##text` to apply that font across the active note's editing canvas (`.cm-content`) and reading view (`.markdown-rendered`).
+- **Smart fallback stacks** — Automatically resolves font fallback stacks (`monospace` for mono/code fonts, `serif` for serif families, and `sans-serif` otherwise).
+
+### Declarative `##commands` rule engine
+
+- **Word-level position matching** — Style words based on their position on a line:
+  ```markdown
+  if line 0 "(" + number + ")" then rd
+  if line 0 word then rd
+  ```
+  Applies the target style (`rd`) strictly to the matched word/token at index `0` (`(1)`, `(2)`, etc.).
+- **Entire line styling** — Apply styling across the entire line:
+  ```markdown
+  if line ">" then ft_quote
+  if line 0 ">" then ft_quote
+  if line word then ft_quote
+  ```
+  Applies the target style (e.g., `ft_quote` font) across the entire line whenever the condition is matched.
+- **Style chaining** — Automatically attach secondary styles to primary rules:
+  ```markdown
+  if rd then ft1
+  ```
+  Whenever text is styled with `rd` (red), font `ft1` (`Inter`) is chained and applied as well.
+- **Concatenation & pattern tokens** — Combine pattern tokens using `+`:
+  - `number`: `\d+`
+  - `word`: `\S+`
+  - `alpha`: `[a-zA-Z]+`
+  - `heading` / `#`: `#{1,6}`
+  - `-` / `bullet`: `[-*+]`
+  - `">"` / `quote`: `>`
+  - String literals: `"..."` or `'...'` (e.g., `"("`, `")"`)
 
 ### Native list interception
 
 - **Styled native bullets** — Standard `-` and `+` list markers are intercepted and replaced with aesthetic bullet characters (`•`, `◦`, `▸`, `▹`, `⁃`, `·`) per indent level.
-- **Guide lines and fading opacity** — Deeper indent levels fade visually with guide lines for hierarchy.
-- **Ghost bullet effect** — Bullets appear on inactive lines; click into a line to reveal the raw markers for editing.
-- **Image-safe** — Lines containing image embeds (`![[...]]` or `![...](...)`) are skipped by the outliner.
+- **Guide lines and fading opacity** — Deeper indent levels fade visually with guide lines for clear structural hierarchy.
+- **Ghost bullet effect** — Styled bullets display on inactive lines; clicking into a line reveals the raw markers for editing.
+- **Image-safe** — Lines containing image embeds (`![[...]]` or `![...](...)`) are preserved without list bullet modifications.
 
 ### Color autocomplete
 
-- **Context-aware color picker** — Typing `#` on a color property line inside a `:::vars` block spawns a floating swatch palette with 9 preset colors and a custom color picker button.
-- **Auto-fill** — Selecting a swatch or using the custom picker writes the hex value directly into the document.
-- **Auto-dismiss** — The popup disappears when the cursor leaves the color scope.
+- **Context-aware color picker** — Typing `#` on a color line inside a `:::vars` block triggers a floating swatch palette with 9 preset colors and a custom color picker button.
+- **Auto-fill** — Selecting a swatch writes the hex value directly into your document.
+- **Auto-dismiss** — The popup dismisses cleanly when the cursor moves away.
 
 ### Data portability and clipboard
 
-- **Variable-stripped copying** — Right-click context menu item "Copy content without variables" strips all `:::vars` blocks and writes clean text to the clipboard.
-- **Cross-platform style preservation** — Copying content writes a dual-flavor clipboard payload:
-  - `text/plain`: Clean, variable-stripped markdown text.
-  - `text/html`: Compiled HTML with inline CSS (`<span style="...">`) so styles survive when pasted into Google Docs, Word, etc.
+- **Copy without variables** — Right-click menu option **Copy content without variables** strips all `:::vars` blocks and copies clean text.
+- **Dual-flavor clipboard payload** — Standard copy (`Ctrl+C` / `Cmd+C`) preserves formatting across applications:
+  - `text/plain`: Clean, variable-stripped markdown.
+  - `text/html`: Compiled HTML with inline CSS (`<span style="...">`) so styles survive when pasting into external editors like Google Docs, Word, or web apps.
 
-### Spatial overlay system (Sticky notes)
+### Global configuration defaults & presets
 
-> [!WARNING]
-> The sticky notes function is currently undergoing fixes and is temporarily disabled.
-
-- **Floating canvas layer** — A non-destructive overlay layer sits above the document text. Right-click to create a sticky note at any position.
-- **Interactive notes** — Notes default to 100×100 pixels and support:
-  - **Drag** anywhere across the overlay.
-  - **Resize** by pulling the corner handle.
-  - **Rotate** freely using the rotation handle.
-  - **Lock** via a toggle button to prevent accidental edits.
-  - **Rich text** content with image support.
-  - **Delete** with a single click.
-- **`#notes` scope in `:::vars`** — Configure sticky note defaults programmatically:
-  ```
-  :::vars
-  #notes
-  text_size = 14
-  text_colour = #333333
-  note_size = 120 x 80
-  note_colour = #fffae6
-  :::
-  ```
-- **Automatic persistence** — Notes are serialized back into the `:::vars` block and saved with the document.
-
-### Global configuration defaults
-
-- **Global vars block** — A text area in the plugin settings serializes directly to `data.json`. Any variables defined here apply as a universal foundation across all notes in the vault.
-- **Local override** — Inline `:::vars` blocks automatically inherit, merge with, and override global defaults.
-
-### Layout presets
-
-- **Pre-made layout dropdowns** — Select from bundled preset schemes ("Classic Red & Blue", "Minimalist Mint", "Royal Purple & Gold") via a modal dropdown to instantly format documents.
-- **Ribbon icon and command** — Access presets from the ribbon or with the "Insert layout preset" command.
-- **Community presets pipeline** — The `src/templates/` directory is structured to accept community-contributed layout configurations via GitHub Pull Requests.
+- **Global vars block** — Define universal variable defaults in **Settings → Concrete**. Local `:::vars` blocks automatically inherit and override these defaults.
+- **Layout presets** — Insert pre-configured schemes ("Classic Red & Blue", "Minimalist Mint", "Royal Purple & Gold", etc.) with the ribbon icon or **Insert layout preset** command.
 
 ### LaTeX protection
 
-- **Parse-exclusion boundaries** — Native LaTeX blocks (`$...$` and `$$...$$`) override the variable engine. Any character ranges inside math wrappers are completely masked out, preventing formatting collisions with LaTeX symbols like underscores, carets, or braces.
+- **Parse-exclusion boundaries** — Math expressions (`$...$` and `$$...$$`) are protected from formatting collisions with LaTeX underscores, carets, or braces.
 
-### Other
+### High-performance viewport bounding
 
-- **Collapsible config block** — The `:::vars` block features an inline fold toggle. Fold it to see a summary like `▶ [VARS: 4 colors, 2 styles]`.
-- **Hide pasted images in sidebar** — Toggle to hide "Pasted image ..." files from the File Explorer.
-- **Live Preview & Reading View** — All features work in both editor modes.
+- Built for CodeMirror 6 with decorations strictly computed over `view.visibleRanges` for zero input latency even in massive documents.
 
 ---
 
@@ -93,68 +102,51 @@ Define custom text wrappers, inline color styles, CSS variables, and structural 
 
 ### 1. Create a `:::vars` block
 
-Place this block anywhere in your note. It defines all your styling rules.
+Place a `:::vars` block anywhere in your note (usually at the top):
 
 ```yaml
 :::vars
 ##colors
-() = #ef4444
-"" = #3b82f6
-hh = #10b981
-&& = #8b5cf6
+rd = #ef4444
+bl = #3b82f6
 
 ##text
-header_size = 32
-paragraph_size = 14
+header_size = 28
+text_ft1_font = Inter
+ft_quote = Merriweather
 
-^^ = header
-.. = paragraph
-__ = underline
-&& = bold
-
-# Or use the named syntax:
-##text
-text_title_size = 32
-text_body_size = 14
-
-title = ^^
-body = ..
-__ = underline
+##commands
+if rd then ft1
+if line 0 "(" + number + ")" then rd
+if line ">" then ft_quote
 :::
 ```
 
 ### 2. Sections
 
-Rules are organized under section headers prefixed with `##`:
+Sections are defined by `##` headers:
 
 | Section | Purpose |
 |---|---|
-| `##colors` (or `##colour`, `##colours`) | Rules here treat values as colors. Wrapped text will be colored. |
-| `##text` | Rules here treat values as CSS class names or text styles. Use `text_name_size = number` and `name = ^^` for named variables. |
-| `#notes` | Configures spatial overlay sticky note defaults (`text_size`, `text_colour`, `note_size`, `note_colour`). |
+| `##colors` (or `##colour`, `##colours`) | Color definitions. Keys are wrapper tokens, values are hex codes or color names. |
+| `##text` | Text sizes, typography, font family variables, and style aliases. |
+| `##commands` | Declarative formatting directives (`if ... then ...`). |
 
-### 3. Color wrappers (under `##colors`)
+### 3. Color variables & shortcuts
 
-Define a wrapper symbol and assign it a color value.
+Assign hex codes or built-in abbreviations under `##colors`:
 
-```
+```yaml
 ##colors
 () = #ef4444
 "" = #3b82f6
+rd = #FF0000
+gn = #00FF00
+bl = #0000FF
 ```
 
-Then use them in your note:
-
-```
-(This text will be red!)
-"This text will be blue!"
-```
-
-**Result:** The wrapper symbols are hidden. You only see the styled text.
-
-**Simplified Color Names & Letter Codes:**
-Rather than using hex codes, you can also use standard color names or simple letter abbreviations directly in your variables (e.g. `() = pr`, `-- = red`, `bl = pink`):
-- `hp` / `black` / `pure black` &rarr; `#000000`
+Supported shortcuts:
+- `hp` / `black` &rarr; `#000000`
 - `wt` / `white` &rarr; `#FFFFFF`
 - `rd` / `red` &rarr; `#FF0000`
 - `gn` / `green` &rarr; `#00FF00`
@@ -168,191 +160,95 @@ Rather than using hex codes, you can also use standard color names or simple let
 - `tl` / `teal` &rarr; `#008080`
 - `br` / `brown` &rarr; `#A52A2A`
 
-These will automatically resolve to their respective HEX color values under the hood.
+### 4. Typography & font variables
 
-### 4. Text wrappers (under `##text`)
-
-Define wrappers that apply CSS classes instead of colors.
-
-```
-##text
-^^ = header
-__ = underline
-```
-
-Usage:
-
-```
-^This becomes a header^
-_This becomes underlined_
-```
-
-**Named text variables:**
-Name text styles anything you want using the `text_{name}_size = {number}` convention:
-
-```
-##text
-text_title_size = 32
-text_body_size = 14
-
-title = ^^
-body = ..
-```
-
-Now `^Title text^` uses `--text_title_size: 32px` and `.Body text.` uses `--text_body_size: 14px`.
-
-**Built-in styles:**
-
-| Class | Effect |
-|---|---|
-| `header` | Bold text, sized by `header_size` or `text_header_size` (default `1.5em`) |
-| `paragraph` | Normal text, sized by `paragraph_size` or `text_paragraph_size` (default `1em`) |
-| `bold` | **Bold** text |
-| `italic` | *Italic* text |
-| `underline` | <ins>Underlined</ins> text |
-| `strikethrough` | ~~Strikethrough~~ text |
-| `highlight` | Applies a background highlight color |
-
-*(You can define any other value and style it yourself with a CSS snippet targeting `.rv-{value}`)*
-
-### 5. Nested & combined wrappers
-
-**Nesting wrappers:**
-```
-_&This text is bold and underlined!&_
-```
-
-**Combining styles:**
-Define the same wrapper in both sections:
+Define font families and sizes under `##text`:
 
 ```yaml
-:::vars
-##colors
-&& = #ff0000
-
 ##text
-&& = header
-header_size = 70
-:::
-```
-Now, writing `&Huge red header!&` applies the color **and** the header size simultaneously.
+# Note-wide canvas font
+font = Arial
 
-### 6. Letter wrappers
+# Font variables
+ft1 = Inter
+text_code_font = JetBrains Mono
+ft_quote = Merriweather
 
-Use letter pairs as wrappers. They **must be spaced** from the content:
-
-```
-##colors
-hh = #10b981
-```
-
-Usage:
-
-```
-hh This text will be green hh
-```
-
-> **Why spaces?** To prevent false matches with normal words that happen to start and end with the same letters.
-
-### 7. CSS variables
-
-Alphanumeric keys with underscores or hyphens become CSS variables:
-
-```
-header_size = 24
-paragraph_size = 14
-```
-
-These become `--header_size: 24px` and `--paragraph_size: 14px` on the document container. The built-in `.rv-header` and `.rv-paragraph` classes reference these variables.
-
-Named convention:
-
-```
+# Size variables
+header_size = 28
 text_title_size = 32
-text_body_size = 14
+
+# Style aliases
+^^ = header
+__ = bold
 ```
 
-These become `--text_title_size: 32px` and `--text_body_size: 14px`. Named text variables (`title = ^^`) automatically pick up the matching size variable.
+Use in text:
+```markdown
+ft1 This text will render in Inter ft1
+^^This will render as a large header^^
+```
 
-### 8. Wrapper syntax rules
+### 5. Declarative commands
 
-| Key | Type | Start | End | Example |
-|---|---|---|---|---|
-| `()` | Asymmetric symbols | `(` | `)` | `(colored text)` |
-| `""` | Symmetric symbols | `"` | `"` | `"colored text"` |
-| `^^` | Symmetric symbols | `^` | `^` | `^header text^` |
-| `hh` | Letter wrapper | `hh ` | ` hh` | `hh highlighted hh` |
+Automate styling with declarative rules under `##commands`:
 
-**Asymmetric** (2 different chars): first char = start, second char = end.
-**Symmetric** (2 same chars): that char = both start and end.
-**Letters** (2+ letters): the full key is used, must be surrounded by spaces.
+```yaml
+##commands
+# Style first word matching pattern (1), (2), etc. in red
+if line 0 "(" + number + ")" then rd
 
-### 9. Interactive color picker
+# Style the first word of any line in red
+if line 0 word then rd
 
-In the editor, every hex color value in your `:::vars` block gets a small color swatch next to it. Click the swatch to open your system's native color picker — changing the color automatically updates the hex code in your note.
+# Style entire blockquote lines in Merriweather font
+if line ">" then ft_quote
 
-### 10. Color autocomplete
+# Style chaining: wherever rd is applied, also apply ft1 font
+if rd then ft1
+```
 
-When typing inside a `:::vars` block on a color property line, type `#` to trigger a floating color palette popup. Select from 9 preset swatches or click "🌈 Custom color" for the full system picker. The hex value is written directly into the text.
-
-### 11. Sticky notes
-
-Right-click in the editor and select **Create sticky note** to spawn a floating note. Notes support:
-
-- Drag to reposition
-- Resize from the corner
-- Rotate using the rotation handle
-- Lock/unlock with the lock icon toggle
-- Delete with the delete button
-- Rich text editing
-
-Configure defaults with a `#notes` section in your `:::vars` block.
-
-### 12. Global defaults
-
-Open **Settings &rarr; Concrete** and use the **Global layout preset** dropdown or the **Global configuration defaults** text area to define variables that apply to every note. These act as a universal base &mdash; local `:::vars` blocks in each note inherit and can override them.
-
-### 13. Layout presets
-
-Click the layout icon in the ribbon or use the command **Insert layout preset** to open the preset selector. Choose from presets like **Classic Red & Blue**, **Minimalist Mint**, **Cozy Journal**, **Academic & Research**, or **Spatial Brainstorming & Mindmap** to instantly configure variables and note styling.
-
-The selected scheme's `:::vars` block is inserted at the top of your note.
+---
 
 ## Settings
 
-The plugin settings panel is organized into four categories:
+- **Core configuration**:
+  - **Enable editor features** — Inline values, completions, and editor styling.
+  - **Enable preview substitutions** — Applies styling in Reading View.
+  - **Global layout preset** — Apply a pre-configured scheme vault-wide.
+  - **Global configuration defaults** — Universal vars block across all notes.
+- **Editor behaviors**:
+  - **Use bullet points** — Toggle native list interception and aesthetic bullets.
+  - **Use colour variables** — Enable color wrappers and swatches.
+  - **Use text variables** — Enable typography wrappers and font variables.
 
-### Core configuration
-- **Enable editor features** — Adds inline values, tooltips, and completions in the editor.
-- **Enable preview substitutions** — Applies reactive variables in reading view.
-- **Global layout preset** — Allows selecting a pre-configured template variables scheme to apply globally across the vault.
-- **Global configuration defaults** — Text area for vault-wide variable definitions.
-
-### Editor behaviors
-- **Use bullet points** — Toggle the native list interception and styling.
-- **Use colour variables** — Enable/disable color wrappers, color CSS variables, and the editor color picker.
-- **Use text variables** — Enable/disable text wrappers and text size variables.
-
-### Sticky notes fallback defaults
-- **Default note size** — Fallback note size (e.g. `200x150` or `160`).
-- **Default note color** — Fallback background color (hex, e.g. `#fffbeb`).
-- **Default note text color** — Fallback note text color (hex, e.g. `#451a03`).
-- **Default note text size** — Fallback text size in note content (e.g. `14px`).
-
-### Advanced
-- **Hide pasted images in sidebar** — Hide "Pasted image ..." files from the File Explorer.
+---
 
 ## Installation
 
-### Manual
-1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release.
-2. Place them in `VaultFolder/.obsidian/plugins/concrete-extension/`.
-3. Reload Obsidian.
-4. Enable **Concrete** in **Settings → Community plugins**.
+### Community plugins
+1. Open **Settings → Community plugins** in Obsidian.
+2. Search for **Concrete**.
+3. Click **Install**, then **Enable**.
+
+### Manual installation
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [Latest Release](https://github.com/apokaliptics/concrete-extension/releases).
+2. Create folder `VaultFolder/.obsidian/plugins/concrete/`.
+3. Place `main.js`, `manifest.json`, and `styles.css` into that folder.
+4. Reload Obsidian and enable **Concrete** in **Settings → Community plugins**.
 
 ### Development
-1. Clone this repo into your `.obsidian/plugins/` folder.
-2. `npm install`
-3. `npm run dev` — compiles and watches for changes.
-4. `npm run build` — production build.
-5. `npm run lint` — checks for style errors.
+```bash
+git clone https://github.com/apokaliptics/concrete-extension.git
+cd concrete-extension
+npm install
+npm run dev     # Watch mode
+npm run build   # Production bundle
+npm run lint    # ESLint verification
+```
+
+---
+
+## License
+
+MIT © apokaliptics

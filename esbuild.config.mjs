@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from 'node:module';
+import { copyFileSync, mkdirSync, existsSync } from 'node:fs';
 
 const banner =
 `/*
@@ -10,6 +11,29 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
+
+function syncDistPlugin() {
+  return {
+    name: "sync-dist",
+    setup(build) {
+      build.onEnd(() => {
+        const distDir = "dist";
+        const pluginDir = "dist/concrete";
+        for (const dir of [distDir, pluginDir]) {
+          if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+          }
+        }
+        for (const file of ["main.js", "manifest.json", "styles.css"]) {
+          if (existsSync(file)) {
+            copyFileSync(file, `${distDir}/${file}`);
+            copyFileSync(file, `${pluginDir}/${file}`);
+          }
+        }
+      });
+    },
+  };
+}
 
 const context = await esbuild.context({
   banner: {
@@ -39,6 +63,7 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: "main.js",
   minify: prod,
+  plugins: [syncDistPlugin()],
 });
 
 if (prod) {

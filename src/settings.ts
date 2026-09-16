@@ -8,12 +8,7 @@ export interface ReactiveVariablesSettings {
 	enableBulletPoints: boolean;
 	enableColorVariables: boolean;
 	enableTextVariables: boolean;
-	hidePastedImagesInSidebar: boolean;
 	globalVars: string;
-	defaultNoteSize: string;
-	defaultNoteColour: string;
-	defaultNoteTextColour: string;
-	defaultNoteTextSize: string;
 }
 
 export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
@@ -22,12 +17,7 @@ export const DEFAULT_SETTINGS: ReactiveVariablesSettings = {
 	enableBulletPoints: true,
 	enableColorVariables: true,
 	enableTextVariables: true,
-	hidePastedImagesInSidebar: false,
 	globalVars: "",
-	defaultNoteSize: "200x150",
-	defaultNoteColour: "",
-	defaultNoteTextColour: "",
-	defaultNoteTextSize: "14px",
 };
 
 export class ReactiveVariablesSettingTab extends PluginSettingTab {
@@ -107,7 +97,7 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 				text.inputEl.rows = 6;
 				setStyle(text.inputEl, "width", "100%");
 				text
-					.setPlaceholder("##colors\n() = #ef4444\n\n##text\nheader_size = 24")
+					.setPlaceholder("##colors\n() = #ef4444\n\n##text\nheader_size = 24\ntext_ft1_font = inter\n\n##commands\nif rd then ft1")
 					.setValue(this.plugin.settings.globalVars)
 					.onChange(async (value) => {
 						this.plugin.settings.globalVars = value;
@@ -150,76 +140,6 @@ export class ReactiveVariablesSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableTextVariables)
 					.onChange(async (value) => {
 						this.plugin.settings.enableTextVariables = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		// Category 3: Sticky Notes Defaults
-		new Setting(containerEl).setName("Sticky notes fallback defaults").setHeading();
-
-		new Setting(containerEl)
-			.setName("Default note size")
-			.setDesc("Fallback note size, for example 200x150 or 160.")
-			.addText((text) =>
-				text
-					.setPlaceholder("200x150")
-					.setValue(this.plugin.settings.defaultNoteSize)
-					.onChange(async (value) => {
-						this.plugin.settings.defaultNoteSize = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Default note color")
-			.setDesc("Fallback background color (hex, e.g. #fffbeb. Leave blank for theme adaptive).")
-			.addText((text) =>
-				text
-					.setPlaceholder("#fffbeb")
-					.setValue(this.plugin.settings.defaultNoteColour)
-					.onChange(async (value) => {
-						this.plugin.settings.defaultNoteColour = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Default note text color")
-			.setDesc("Fallback note text color (hex, e.g. #451a03. Leave blank for theme adaptive).")
-			.addText((text) =>
-				text
-					.setPlaceholder("#451a03")
-					.setValue(this.plugin.settings.defaultNoteTextColour)
-					.onChange(async (value) => {
-						this.plugin.settings.defaultNoteTextColour = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Default note text size")
-			.setDesc("Fallback text size in note content (e.g. 14px or 12).")
-			.addText((text) =>
-				text
-					.setPlaceholder("14px")
-					.setValue(this.plugin.settings.defaultNoteTextSize)
-					.onChange(async (value) => {
-						this.plugin.settings.defaultNoteTextSize = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
-
-		// Category 4: Advanced Settings
-		new Setting(containerEl).setName("Advanced").setHeading();
-
-		new Setting(containerEl)
-			.setName("Hide pasted images in sidebar")
-			.setDesc("Hides pasted image files from the file explorer.")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.hidePastedImagesInSidebar)
-					.onChange(async (value) => {
-						this.plugin.settings.hidePastedImagesInSidebar = value;
 						await this.plugin.saveSettings();
 					})
 			);

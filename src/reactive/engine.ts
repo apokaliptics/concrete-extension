@@ -1,4 +1,5 @@
 import { Text } from "@codemirror/state";
+import { CommandRule, parseCommandLine } from "./commands";
 
 export type DeclSource = "frontmatter" | "vars-block";
 
@@ -12,7 +13,7 @@ export type RuleType = "css" | "wrapper";
 
 export interface RuleStyle {
   val: string;
-  section: "colors" | "text" | "default" | "notes";
+  section: "colors" | "text" | "default";
   valFrom: number;
   valTo: number;
 }
@@ -26,6 +27,16 @@ export interface RuleEntry {
   styles: RuleStyle[];
 }
 
+export interface FontRuleEntry {
+  name: string;
+  fontFamily: string;
+  fallback: string;
+  cssValue: string;
+  isGlobal: boolean;
+  valFrom: number;
+  valTo: number;
+}
+
 export interface WrapperMatch {
   rule: RuleEntry;
   fullFrom: number;
@@ -36,6 +47,8 @@ export interface WrapperMatch {
 
 export interface ParseResult {
   rules: Map<string, RuleEntry>;
+  fontRules: Map<string, FontRuleEntry>;
+  commands: CommandRule[];
   blocks: DeclBlockRange[];
 }
 
@@ -68,10 +81,93 @@ export function findMathRanges(text: string): MathRange[] {
   return ranges;
 }
 
-export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEntry>) {
+export function cleanFontFamily(val: string): string {
+  return val.trim().replace(/^["']|["']$/g, "").trim();
+}
+
+export function resolveFontFallback(family: string): string {
+  const lower = family.toLowerCase();
+  if (lower.includes("mono") || lower.includes("code") || lower.includes("console")) {
+    return "monospace";
+  }
+  if (
+    lower.includes("serif") ||
+    lower.includes("times") ||
+    lower.includes("georgia") ||
+    lower.includes("merriweather") ||
+    lower.includes("palatino") ||
+    lower.includes("garamond")
+  ) {
+    return "serif";
+  }
+  return "sans-serif";
+}
+
+export function formatFontCssValue(family: string): string {
+  const cleaned = cleanFontFamily(family);
+  const fallback = resolveFontFallback(cleaned);
+  const safeFamily = cleaned.includes(" ") ? `'${cleaned}'` : cleaned;
+  return `${safeFamily}, ${fallback}`;
+}
+
+interface FontRuleDetection {
+  isFont: boolean;
+  varName: string;
+  isGlobal: boolean;
+}
+
+const STANDARD_TEXT_STYLES = new Set([
+  "bold",
+  "italic",
+  "underline",
+  "strikethrough",
+  "highlight",
+  "header",
+  "paragraph"
+]);
+
+export function detectFontRule(key: string, val: string, section: string): FontRuleDetection {
+  const trimmedKey = key.trim();
+  const lowerKey = trimmedKey.toLowerCase();
+  const trimmedVal = cleanFontFamily(val);
+
+  if (lowerKey === "font") {
+    return { isFont: true, varName: "font", isGlobal: true };
+  }
+
+  if (lowerKey.startsWith("text_") && lowerKey.endsWith("_font")) {
+    const varName = trimmedKey.slice(5, -5);
+    return { isFont: true, varName: varName || trimmedKey, isGlobal: false };
+  }
+
+  if (lowerKey.endsWith("_font")) {
+    const varName = trimmedKey.slice(0, -5);
+    return { isFont: true, varName: varName || trimmedKey, isGlobal: false };
+  }
+
+  if (section === "text") {
+    if (
+      !/^\d+$/.test(trimmedVal) &&
+      !STANDARD_TEXT_STYLES.has(trimmedVal.toLowerCase()) &&
+      !isWrapperKey(trimmedVal) &&
+      !isTextSizeRuleKey(trimmedKey)
+    ) {
+      return { isFont: true, varName: trimmedKey, isGlobal: false };
+    }
+  }
+
+  return { isFont: false, varName: "", isGlobal: false };
+}
+
+export function parseGlobalVars(
+  globalVarsStr: string,
+  rules: Map<string, RuleEntry>,
+  fontRules: Map<string, FontRuleEntry>,
+  commands: CommandRule[]
+) {
   if (!globalVarsStr) return;
   const lines = globalVarsStr.split("\n");
-  let currentSection: "colors" | "text" | "default" | "notes" = "default";
+  let currentSection: "colors" | "text" | "commands" | "default" = "default";
 
   for (let i = 0; i < lines.length; i++) {
     const text = (lines[i] || "").trim();
@@ -83,18 +179,21 @@ export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEn
         currentSection = "colors";
       } else if (sectionName === "text") {
         currentSection = "text";
-      } else if (sectionName === "notes" || sectionName === "note") {
-        currentSection = "notes";
+      } else if (sectionName === "commands" || sectionName === "command") {
+        currentSection = "commands";
       }
       continue;
     }
 
-    if (text.toLowerCase().startsWith("#notes") || text.toLowerCase().startsWith("##notes")) {
-      currentSection = "notes";
+    if (text.startsWith("#")) continue;
+
+    if (currentSection === "commands") {
+      const cmd = parseCommandLine(text);
+      if (cmd) {
+        commands.push(cmd);
+      }
       continue;
     }
-
-    if (text.startsWith("#")) continue;
 
     const equalsIdx = text.indexOf("=");
     if (equalsIdx === -1) continue;
@@ -104,13 +203,37 @@ export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEn
     const val = valRaw.trim();
     if (!key || !val) continue;
 
+    const fontDetection = detectFontRule(key, val, currentSection);
+    if (fontDetection.isFont) {
+      const cleaned = cleanFontFamily(val);
+      const fallback = resolveFontFallback(cleaned);
+      const cssValue = formatFontCssValue(cleaned);
+      fontRules.set(fontDetection.varName, {
+        name: fontDetection.varName,
+        fontFamily: cleaned,
+        fallback,
+        cssValue,
+        isGlobal: fontDetection.isGlobal,
+        valFrom: -1,
+        valTo: -1
+      });
+
+      const fontStyle: RuleStyle = { val: `font:${fontDetection.varName}`, section: "text", valFrom: -1, valTo: -1 };
+      addCssRule(rules, key, { val: cssValue, section: "text", valFrom: -1, valTo: -1 });
+
+      if (!fontDetection.isGlobal) {
+        addWrapperRule(rules, fontDetection.varName, fontStyle);
+        if (key !== fontDetection.varName) {
+          addWrapperRule(rules, key, fontStyle);
+        }
+      }
+      continue;
+    }
+
     const resolvedVal = resolveColorNameOrAbbrev(val);
-    // For global variables, we don't have document offsets (valFrom / valTo) for widgets, so we can set them to -1.
     const style: RuleStyle = { val: resolvedVal, section: currentSection, valFrom: -1, valTo: -1 };
 
-    if (currentSection === "notes") {
-      addCssRule(rules, key, style);
-    } else if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
+    if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
       addWrapperRule(rules, val, { ...style, val: key });
     } else if (isCssRuleKey(key)) {
       addCssRule(rules, key, style);
@@ -122,24 +245,32 @@ export function parseGlobalVars(globalVarsStr: string, rules: Map<string, RuleEn
 
 export function parseDeclarations(doc: Text, globalVarsStr?: string): ParseResult {
   const rules = new Map<string, RuleEntry>();
+  const fontRules = new Map<string, FontRuleEntry>();
+  const commands: CommandRule[] = [];
   
   if (globalVarsStr) {
-    parseGlobalVars(globalVarsStr, rules);
+    parseGlobalVars(globalVarsStr, rules, fontRules, commands);
   }
 
   const blocks = findDeclarationBlocks(doc);
 
   for (const block of blocks) {
-    parseBlock(doc, block, rules);
+    parseBlock(doc, block, rules, fontRules, commands);
   }
 
-  return { rules, blocks };
+  return { rules, fontRules, commands, blocks };
 }
 
-function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEntry>) {
+function parseBlock(
+  doc: Text,
+  block: DeclBlockRange,
+  rules: Map<string, RuleEntry>,
+  fontRules: Map<string, FontRuleEntry>,
+  commands: CommandRule[]
+) {
   const startLine = doc.lineAt(block.from).number;
   const endLine = doc.lineAt(block.to).number;
-  let currentSection: "colors" | "text" | "default" | "notes" = "default";
+  let currentSection: "colors" | "text" | "commands" | "default" = "default";
 
   for (let lineNo = startLine + 1; lineNo <= endLine - 1; lineNo += 1) {
     const text = doc.line(lineNo).text.trim();
@@ -151,18 +282,21 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
         currentSection = "colors";
       } else if (sectionName === "text") {
         currentSection = "text";
-      } else if (sectionName === "notes" || sectionName === "note") {
-        currentSection = "notes";
+      } else if (sectionName === "commands" || sectionName === "command") {
+        currentSection = "commands";
       }
       continue;
     }
 
-    if (text.toLowerCase().startsWith("#notes") || text.toLowerCase().startsWith("##notes")) {
-      currentSection = "notes";
+    if (text.startsWith("#")) continue;
+
+    if (currentSection === "commands") {
+      const cmd = parseCommandLine(text);
+      if (cmd) {
+        commands.push(cmd);
+      }
       continue;
     }
-
-    if (text.startsWith("#")) continue;
 
     const equalsIdx = text.indexOf("=");
     if (equalsIdx === -1) continue;
@@ -175,12 +309,37 @@ function parseBlock(doc: Text, block: DeclBlockRange, rules: Map<string, RuleEnt
     const valStart = doc.line(lineNo).from + equalsIdx + 1 + valRaw.indexOf(val);
     const valEnd = valStart + val.length;
 
+    const fontDetection = detectFontRule(key, val, currentSection);
+    if (fontDetection.isFont) {
+      const cleaned = cleanFontFamily(val);
+      const fallback = resolveFontFallback(cleaned);
+      const cssValue = formatFontCssValue(cleaned);
+      fontRules.set(fontDetection.varName, {
+        name: fontDetection.varName,
+        fontFamily: cleaned,
+        fallback,
+        cssValue,
+        isGlobal: fontDetection.isGlobal,
+        valFrom: valStart,
+        valTo: valEnd
+      });
+
+      const fontStyle: RuleStyle = { val: `font:${fontDetection.varName}`, section: "text", valFrom: valStart, valTo: valEnd };
+      addCssRule(rules, key, { val: cssValue, section: "text", valFrom: valStart, valTo: valEnd });
+
+      if (!fontDetection.isGlobal) {
+        addWrapperRule(rules, fontDetection.varName, fontStyle);
+        if (key !== fontDetection.varName) {
+          addWrapperRule(rules, key, fontStyle);
+        }
+      }
+      continue;
+    }
+
     const resolvedVal = resolveColorNameOrAbbrev(val);
     const style: RuleStyle = { val: resolvedVal, section: currentSection, valFrom: valStart, valTo: valEnd };
 
-    if (currentSection === "notes") {
-      addCssRule(rules, key, style);
-    } else if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
+    if (currentSection === "text" && isTextNameToWrapperRule(key, val)) {
       addWrapperRule(rules, val, { ...style, val: key });
     } else if (isCssRuleKey(key)) {
       addCssRule(rules, key, style);
@@ -208,7 +367,7 @@ function addCssRule(rules: Map<string, RuleEntry>, key: string, style: RuleStyle
 function addWrapperRule(rules: Map<string, RuleEntry>, key: string, style: RuleStyle) {
   let startSym = key;
   let endSym = key;
-  const isLetterWrapper = /^[A-Za-z]{2,}$/.test(key);
+  const isLetterWrapper = /^[A-Za-z][A-Za-z0-9_-]*$/.test(key);
   if (!isLetterWrapper && key.length === 2) {
     startSym = key.charAt(0);
     endSym = key.charAt(1);
@@ -319,7 +478,7 @@ function findLetterMatch(text: string, from: number, rule: RuleEntry) {
     const startIdx = text.indexOf(key, pos);
     if (startIdx === -1) return null;
 
-    if (startIdx > 0 && /\w/.test(text.charAt(startIdx - 1))) { pos = startIdx + 1; continue; }
+    if (startIdx > 0 && /[\w-]/.test(text.charAt(startIdx - 1))) { pos = startIdx + 1; continue; }
     const afterKey = startIdx + key.length;
     if (afterKey >= text.length || text.charAt(afterKey) !== " ") { pos = startIdx + 1; continue; }
 
@@ -329,7 +488,7 @@ function findLetterMatch(text: string, from: number, rule: RuleEntry) {
     if (endIdx === -1) return null;
 
     const fullEnd = endIdx + endMarker.length;
-    if (fullEnd < text.length && /\w/.test(text.charAt(fullEnd))) { pos = startIdx + 1; continue; }
+    if (fullEnd < text.length && /[\w-]/.test(text.charAt(fullEnd))) { pos = startIdx + 1; continue; }
 
     return { startIdx, endIdx: fullEnd, contentStart, contentEnd: endIdx };
   }

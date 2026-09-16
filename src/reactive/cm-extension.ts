@@ -20,6 +20,7 @@ import {
   DeclBlockRange,
   isColorString,
   RuleEntry,
+  FontRuleEntry,
   parseDeclarations,
   findWrapperMatchesInText,
   containsImageMarkdown
@@ -31,17 +32,27 @@ import {
   hasEnabledStyles
 } from "./utils";
 import type { ReactiveFeatureOptions } from "./utils";
+import {
+  CommandRule,
+  ChainCommand,
+  getLineTokens,
+  resolveChainedStyles
+} from "./commands";
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "CodeBlock", "InlineCode"]);
 
 interface VarState {
   rules: Map<string, RuleEntry>;
+  fontRules: Map<string, FontRuleEntry>;
+  commands: CommandRule[];
   blocks: DeclBlockRange[];
   version: number;
 }
 
 interface ReparsePayload {
   rules: Map<string, RuleEntry>;
+  fontRules: Map<string, FontRuleEntry>;
+  commands: CommandRule[];
   blocks: DeclBlockRange[];
 }
 
@@ -55,12 +66,14 @@ const optionsFacet = Facet.define<ReactiveFeatureOptions, ReactiveFeatureOptions
 const varStateField = StateField.define<VarState>({
   create(state) {
     const options = state.facet(optionsFacet);
-    const { rules, blocks } = parseDeclarations(state.doc, options?.globalVars);
-    return { rules, blocks, version: 1 };
+    const { rules, fontRules, commands, blocks } = parseDeclarations(state.doc, options?.globalVars);
+    return { rules, fontRules, commands, blocks, version: 1 };
   },
   update(value, tr) {
     let blocks = value.blocks;
     let rules = value.rules;
+    let fontRules = value.fontRules;
+    let commands = value.commands;
     let version = value.version;
     if (tr.docChanged) {
       blocks = blocks.map((b) => ({
@@ -73,11 +86,13 @@ const varStateField = StateField.define<VarState>({
     for (const effect of tr.effects) {
       if (effect.is(reparseEffect)) {
         rules = effect.value.rules;
+        fontRules = effect.value.fontRules;
+        commands = effect.value.commands;
         blocks = effect.value.blocks;
         version += 1;
       }
     }
-    return { rules, blocks, version };
+    return { rules, fontRules, commands, blocks, version };
   }
 });
 
@@ -141,8 +156,19 @@ function createCssVarPlugin(options: ReactiveFeatureOptions): Extension {
       private apply(state: EditorState) {
         const vs = state.field(varStateField);
         const c = this.view.dom.closest(".markdown-source-view") ?? this.view.dom;
-        if (!c) return;
-        this.lastKeys = applyCssVarsToElement(c as HTMLElement, vs.rules, this.lastKeys, options);
+        if (!(c instanceof HTMLElement)) return;
+        this.lastKeys = applyCssVarsToElement(c, vs.rules, this.lastKeys, options);
+
+        // Global font handling
+        const globalFont = vs.fontRules.get("font");
+        if (globalFont) {
+          c.style.setProperty("--concrete-note-font", globalFont.cssValue);
+          c.classList.add("concrete-has-font");
+        } else {
+          c.style.removeProperty("--concrete-note-font");
+          c.classList.remove("concrete-has-font");
+        }
+
         this.lastVersion = vs.version;
       }
     }
@@ -159,8 +185,8 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
       if (this.timer) window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => {
         const options = update.state.facet(optionsFacet);
-        const { rules, blocks } = parseDeclarations(update.state.doc, options?.globalVars);
-        update.view.dispatch({ effects: reparseEffect.of({ rules, blocks }) });
+        const { rules, fontRules, commands, blocks } = parseDeclarations(update.state.doc, options?.globalVars);
+        update.view.dispatch({ effects: reparseEffect.of({ rules, fontRules, commands, blocks }) });
       }, 200);
     }
     destroy() { if (this.timer) window.clearTimeout(this.timer); }
@@ -203,9 +229,9 @@ class FoldToggleWidget extends WidgetType {
     btn.addEventListener("mousedown", (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      window.setTimeout(() => {
+      queueMicrotask(() => {
         view.dispatch({ effects: [toggleFoldEffect.of(ln)] });
-      }, 0);
+      });
     });
     return btn;
   }
@@ -221,63 +247,152 @@ class BulletWidget extends WidgetType {
     return other.level === this.level;
   }
   toDOM() {
-    const span = activeDocument.createElement("span");
-    span.className = `rv-bullet rv-bullet-${this.level}`;
+    const span = createSpan({ cls: `rv-bullet rv-bullet-${this.level}` });
     span.textContent = BULLET_CHARS[Math.min(this.level - 1, BULLET_CHARS.length - 1)] + " ";
     return span;
   }
 }
 
+/* ── Style Resolution Helpers ── */
+
+interface ResolvedStyle {
+  className: string;
+  styleAttrs: Record<string, string>;
+}
+
+function resolveTargetStyleAttributes(
+  styleName: string,
+  varState: VarState,
+  options: ReactiveFeatureOptions,
+  visited = new Set<string>()
+): ResolvedStyle {
+  if (visited.has(styleName)) {
+    return { className: "", styleAttrs: {} };
+  }
+  visited.add(styleName);
+
+  let className = "rv-styled";
+  let styleStr = "";
+
+  // 1. Direct color string
+  if (isColorString(styleName)) {
+    if (options.enableColorVariables) {
+      styleStr += `color: ${styleName};`;
+    }
+  }
+
+  // 2. Font rule
+  const fontRule = varState.fontRules.get(styleName) ??
+                   varState.fontRules.get(styleName.replace(/^text_/, "").replace(/_font$/, ""));
+  if (fontRule && options.enableTextVariables) {
+    styleStr += `font-family: ${fontRule.cssValue};`;
+  }
+
+  // 3. RuleEntry from declared rules
+  const entry = varState.rules.get(styleName) ??
+                varState.rules.get(styleName.replace(/^text_/, "").replace(/_font$/, ""));
+  if (entry) {
+    for (const s of getEnabledStyles(entry, options)) {
+      if (s.section === "colors" || isColorString(s.val)) {
+        styleStr += `color: ${s.val};`;
+      } else if (s.val.startsWith("font:")) {
+        const fName = s.val.slice(5);
+        const fRule = varState.fontRules.get(fName);
+        if (fRule) {
+          styleStr += `font-family: ${fRule.cssValue};`;
+        } else {
+          styleStr += `font-family: var(--text_${fName}_font, var(--${fName}_font, inherit));`;
+        }
+      } else {
+        className += ` rv-${s.val}`;
+        const textSizeCssVar = getTextSizeCssVar(s.val, varState.rules, options);
+        if (textSizeCssVar) {
+          styleStr += `font-size: var(${textSizeCssVar});`;
+        }
+      }
+    }
+  }
+
+  // 4. Follow style chaining
+  const chainCmds = varState.commands.filter((c): c is ChainCommand => c.type === "chain");
+  const chained = resolveChainedStyles([styleName], chainCmds);
+  for (const chainedStyle of chained) {
+    if (chainedStyle !== styleName) {
+      const sub = resolveTargetStyleAttributes(chainedStyle, varState, options, visited);
+      if (sub.className) className += " " + sub.className;
+      if (sub.styleAttrs.style) styleStr += sub.styleAttrs.style;
+    }
+  }
+
+  const styleAttrs: Record<string, string> = {};
+  if (styleStr) {
+    styleAttrs.style = styleStr;
+  }
+
+  return { className: className.trim(), styleAttrs };
+}
+
 /* ── Decorations ── */
+
+function isPosInVisibleRanges(pos: number, ranges: readonly { from: number; to: number }[]): boolean {
+  return ranges.some(r => pos >= r.from && pos <= r.to);
+}
 
 function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): DecorationSet {
   const varState = view.state.field(varStateField);
   const foldedSet = view.state.field(foldedSetField);
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const decs: Array<{ from: number; to: number; value: Decoration }> = [];
+  const visibleRanges = view.visibleRanges;
 
-  // Process each vars block for fold UI
+  // 1. Vars block fold UI (bounded strictly to visibleRanges)
   for (const block of varState.blocks) {
     if (block.source !== "vars-block") continue;
     const blockLineNum = view.state.doc.lineAt(block.from).number;
     const isFolded = foldedSet.has(blockLineNum);
+    const firstLine = view.state.doc.lineAt(block.from);
 
-    let colors = 0, textStyles = 0;
-    for (const rule of varState.rules.values()) {
-      for (const style of rule.styles) {
-        if (style.valFrom >= block.from && style.valTo <= block.to) {
-          if ((style.section === "colors" || isColorString(style.val)) && options.enableColorVariables) colors++;
-          else if (style.section === "text" && options.enableTextVariables) textStyles++;
-          else if (options.enableColorVariables || options.enableTextVariables) colors++;
+    if (isPosInVisibleRanges(firstLine.to, visibleRanges)) {
+      let colors = 0, textStyles = 0;
+      for (const rule of varState.rules.values()) {
+        for (const style of rule.styles) {
+          if (style.valFrom >= block.from && style.valTo <= block.to) {
+            if ((style.section === "colors" || isColorString(style.val)) && options.enableColorVariables) colors++;
+            else if (style.section === "text" && options.enableTextVariables) textStyles++;
+            else if (options.enableColorVariables || options.enableTextVariables) colors++;
+          }
         }
       }
-    }
-    const summary = `[VARS: ${colors} color${colors !== 1 ? "s" : ""}, ${textStyles} style${textStyles !== 1 ? "s" : ""}]`;
+      const summary = `[VARS: ${colors} color${colors !== 1 ? "s" : ""}, ${textStyles} style${textStyles !== 1 ? "s" : ""}]`;
 
-    const firstLine = view.state.doc.lineAt(block.from);
-    decs.push({
-      from: firstLine.to,
-      to: firstLine.to,
-      value: Decoration.widget({ widget: new FoldToggleWidget(summary, blockLineNum, isFolded), side: 1 })
-    });
+      decs.push({
+        from: firstLine.to,
+        to: firstLine.to,
+        value: Decoration.widget({ widget: new FoldToggleWidget(summary, blockLineNum, isFolded), side: 1 })
+      });
+    }
 
     if (isFolded) {
       const endLineNum = view.state.doc.lineAt(block.to).number;
       for (let ln = blockLineNum + 1; ln <= endLineNum; ln++) {
         const line = view.state.doc.line(ln);
-        decs.push({
-          from: line.from,
-          to: line.from,
-          value: Decoration.line({ class: "rv-vars-hidden" })
-        });
+        if (isPosInVisibleRanges(line.from, visibleRanges)) {
+          decs.push({
+            from: line.from,
+            to: line.from,
+            value: Decoration.line({ class: "rv-vars-hidden" })
+          });
+        }
       }
     }
   }
 
-  // Color swatches in un-folded blocks
+  // 2. Color swatches in un-folded blocks (bounded strictly to visibleRanges)
   if (options.enableColorVariables) {
     for (const rule of varState.rules.values()) {
       for (const style of rule.styles) {
+        if (!isPosInVisibleRanges(style.valFrom, visibleRanges)) continue;
+
         const inFolded = varState.blocks.some(b => {
           if (b.source !== "vars-block") return false;
           const bln = view.state.doc.lineAt(b.from).number;
@@ -293,16 +408,19 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
     }
   }
 
-  // Wrapper + list + dash decorations
+  // 3. Wrapper + list + command decorations (iterating strictly over view.visibleRanges)
   const wrappers = Array.from(varState.rules.values()).filter(r => r.type === "wrapper" && hasEnabledStyles(r, options));
-  for (const range of view.visibleRanges) {
+  const chainCmds = varState.commands.filter((c): c is ChainCommand => c.type === "chain");
+
+  for (const range of visibleRanges) {
     const startLine = view.state.doc.lineAt(range.from).number;
     const endLine = view.state.doc.lineAt(range.to).number;
+
     for (let lineNo = startLine; lineNo <= endLine; lineNo += 1) {
       const line = view.state.doc.line(lineNo);
       if (isInDeclBlock(line.from, varState.blocks)) continue;
 
-      // 1. Native List Interception
+      // 3a. Native List Interception
       if (options.enableBulletPoints) {
         const listMatch = /^([ \t]*)([-+])([ \t]+)/.exec(line.text);
         if (listMatch && !containsImageMarkdown(line.text)) {
@@ -331,18 +449,68 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
         }
       }
 
-      // 2. Wrapper parsing
+      // 3b. Declarative Line Commands (e.g. `if line 0 "(" + number + ")" then rd`, `if line ">" then ft_quote`)
+      if (varState.commands.length > 0 && lineNo !== activeLine) {
+        for (const cmd of varState.commands) {
+          if (cmd.type !== "line") continue;
+
+          if (cmd.scope === "word" && cmd.wordIndex !== undefined) {
+            const tokens = getLineTokens(line.text);
+            const token = tokens[cmd.wordIndex];
+            if (token && cmd.patternRegex.test(token.text)) {
+              const from = line.from + token.from;
+              const to = line.from + token.to;
+              const { className, styleAttrs } = resolveTargetStyleAttributes(cmd.targetStyle, varState, options);
+              decs.push({
+                from,
+                to,
+                value: Decoration.mark({ class: className, attributes: styleAttrs })
+              });
+            }
+          } else if (cmd.scope === "line") {
+            const tokens = getLineTokens(line.text);
+            const firstToken = tokens[0]?.text ?? "";
+            const isMatch = cmd.patternRegex.test(line.text) || (firstToken ? cmd.patternRegex.test(firstToken) : false);
+            if (isMatch) {
+              const from = line.from;
+              const to = line.to;
+              if (from < to) {
+                const { className, styleAttrs } = resolveTargetStyleAttributes(cmd.targetStyle, varState, options);
+                decs.push({
+                  from,
+                  to,
+                  value: Decoration.mark({ class: className, attributes: styleAttrs })
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // 3c. Wrapper parsing (with style chaining and font wrapping)
       if (lineNo === activeLine || wrappers.length === 0) continue;
       const matches = findWrapperMatchesInText(line.text, line.from, wrappers);
+
       for (const m of matches) {
         if (isInCodeOrMath(view.state, m.fullFrom)) continue;
+
         decs.push({ from: m.fullFrom, to: m.contentFrom, value: Decoration.replace({}) });
+
         let markClass = "rv-styled";
         let markAttrs: Record<string, string> | undefined;
+
+        // Base styles for wrapper rule
         for (const style of getEnabledStyles(m.rule, options)) {
           if (style.section === "colors" || isColorString(style.val)) {
             if (!markAttrs) markAttrs = {};
             markAttrs.style = (markAttrs.style || "") + `color: ${style.val};`;
+          } else if (style.val.startsWith("font:")) {
+            const fName = style.val.slice(5);
+            const fRule = varState.fontRules.get(fName);
+            if (fRule && options.enableTextVariables) {
+              if (!markAttrs) markAttrs = {};
+              markAttrs.style = (markAttrs.style || "") + `font-family: ${fRule.cssValue};`;
+            }
           } else {
             markClass += ` rv-${style.val}`;
             const textSizeCssVar = getTextSizeCssVar(style.val, varState.rules, options);
@@ -352,7 +520,27 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
             }
           }
         }
-        decs.push({ from: m.contentFrom, to: m.contentTo, value: Decoration.mark({ class: markClass, ...(markAttrs ? { attributes: markAttrs } : {}) }) });
+
+        // Apply any chained styles: if rd then ft1
+        if (chainCmds.length > 0) {
+          const chained = resolveChainedStyles([m.rule.key], chainCmds);
+          for (const cStyle of chained) {
+            if (cStyle !== m.rule.key) {
+              const res = resolveTargetStyleAttributes(cStyle, varState, options);
+              if (res.className) markClass += ` ${res.className}`;
+              if (res.styleAttrs.style) {
+                if (!markAttrs) markAttrs = {};
+                markAttrs.style = (markAttrs.style || "") + res.styleAttrs.style;
+              }
+            }
+          }
+        }
+
+        decs.push({
+          from: m.contentFrom,
+          to: m.contentTo,
+          value: Decoration.mark({ class: markClass, ...(markAttrs ? { attributes: markAttrs } : {}) })
+        });
         decs.push({ from: m.contentTo, to: m.fullTo, value: Decoration.replace({}) });
       }
     }
@@ -447,8 +635,7 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
 
     private showPopup(hashPos: number, currentHex: string) {
       if (!this.popupEl) {
-        this.popupEl = activeDocument.createElement("div");
-        this.popupEl.className = "rv-color-autocomplete-popup";
+        this.popupEl = createDiv({ cls: "rv-color-autocomplete-popup" });
         
         const colors = [
           "#ef4444", "#f97316", "#f59e0b",
@@ -456,11 +643,9 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
           "#6366f1", "#8b5cf6", "#ec4899"
         ];
 
-        const grid = activeDocument.createElement("div");
-        grid.className = "rv-color-autocomplete-grid";
+        const grid = createDiv({ cls: "rv-color-autocomplete-grid" });
         for (const col of colors) {
-          const swatch = activeDocument.createElement("div");
-          swatch.className = "rv-color-autocomplete-swatch";
+          const swatch = createDiv({ cls: "rv-color-autocomplete-swatch" });
           swatch.style.setProperty("background-color", col);
           swatch.title = col;
           swatch.onclick = (e) => {
@@ -471,15 +656,11 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
         }
         this.popupEl.appendChild(grid);
 
-        const bottomBar = activeDocument.createElement("div");
-        bottomBar.className = "rv-color-autocomplete-bottom";
+        const bottomBar = createDiv({ cls: "rv-color-autocomplete-bottom" });
         
-        const pickerBtn = activeDocument.createElement("button");
-        pickerBtn.className = "rv-color-autocomplete-picker-btn";
-        pickerBtn.textContent = "\uD83C\uDF08 custom colour";
+        const pickerBtn = createEl("button", { cls: "rv-color-autocomplete-picker-btn", text: "\uD83C\uDF08 custom colour" });
         
-        const hiddenInput = activeDocument.createElement("input");
-        hiddenInput.type = "color";
+        const hiddenInput = createEl("input", { type: "color" });
         setStyle(hiddenInput, "display", "none");
         if (currentHex.length === 6 || currentHex.length === 3) {
           let hex = currentHex;
@@ -538,9 +719,9 @@ const colorAutocompletePlugin = ViewPlugin.fromClass(
   }
 );
 
-function getCurrentSectionOfLine(doc: Text, lineNo: number, block: DeclBlockRange): "colors" | "text" | "default" | "notes" {
+function getCurrentSectionOfLine(doc: Text, lineNo: number, block: DeclBlockRange): "colors" | "text" | "commands" | "default" {
   const startLine = doc.lineAt(block.from).number;
-  let currentSection: "colors" | "text" | "default" | "notes" = "default";
+  let currentSection: "colors" | "text" | "commands" | "default" = "default";
   for (let l = startLine + 1; l <= lineNo; l++) {
     const text = doc.line(l).text.trim();
     if (text.startsWith("##")) {
@@ -549,9 +730,9 @@ function getCurrentSectionOfLine(doc: Text, lineNo: number, block: DeclBlockRang
         currentSection = "colors";
       } else if (sectionName === "text") {
         currentSection = "text";
+      } else if (sectionName === "commands" || sectionName === "command") {
+        currentSection = "commands";
       }
-    } else if (text.toLowerCase().startsWith("#notes")) {
-      currentSection = "notes";
     }
   }
   return currentSection;

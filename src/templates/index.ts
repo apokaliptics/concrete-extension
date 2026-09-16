@@ -25,12 +25,6 @@ export const PRESETS: LayoutPreset[] = [
 ##text
 header_size = 28
 ^^ = header
-
-##notes
-text_size = 13
-text_colour = #1e3a8a
-note_size = 180x130
-note_colour = #dbeafe
 :::`
   },
   {
@@ -98,12 +92,6 @@ text_header_size = 28
 text_body_size = 15
 ^^ = header
 __ = bold
-
-##notes
-text_size = 12
-text_colour = #0f172a
-note_size = 220x160
-note_colour = #f1f5f9
 :::`
   },
   {
@@ -152,12 +140,6 @@ text_header_size = 24
 text_body_size = 16
 ^^ = header
 __ = italic
-
-##notes
-text_size = 14
-text_colour = #431407
-note_size = 200x150
-note_colour = #ffedd5
 :::`
   },
   {
@@ -181,32 +163,6 @@ pi = #ec4899
 text_header_size = 28
 ^^ = header
 __ = bold
-:::`
-  },
-  {
-    id: "spatial-brainstorm",
-    name: "Spatial Brainstorming & Mindmap",
-    description: "Designed for spatial notes with custom sticky color/size and lilac theme.",
-    varsBlock: `:::vars
-# Spatial Brainstorming scheme:
-# - pi [text] pi : Orchid Purple (core concepts, central ideas)
-# - bl [text] bl : Deep Indigo (connections, secondary nodes)
-# - ^[text]^     : Large mindmap title/header
-# - Default sticky notes: Soft Lavender background (#fae8ff) with purple text
-
-##colors
-pi = #d946ef
-bl = #4f46e5
-
-##text
-text_header_size = 30
-^^ = header
-
-##notes
-text_size = 13
-text_colour = #4a044e
-note_size = 160
-note_colour = #fae8ff
 :::`
   }
 ];
