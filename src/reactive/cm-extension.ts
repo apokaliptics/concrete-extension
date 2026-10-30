@@ -1,6 +1,7 @@
 import {
   EditorState,
   Extension,
+  Prec,
   StateEffect,
   StateField,
   Facet,
@@ -10,6 +11,7 @@ import {
   Decoration,
   DecorationSet,
   EditorView,
+  keymap,
   ViewPlugin,
   ViewUpdate,
   WidgetType
@@ -23,7 +25,8 @@ import {
   FontRuleEntry,
   parseDeclarations,
   findWrapperMatchesInText,
-  containsImageMarkdown
+  containsImageMarkdown,
+  resolveMultipleStyles
 } from "./engine";
 import {
   applyCssVarsToElement,
@@ -35,8 +38,11 @@ import type { ReactiveFeatureOptions } from "./utils";
 import {
   CommandRule,
   ChainCommand,
+  ProgramNode,
   getLineTokens,
-  resolveChainedStyles
+  resolveChainedStyles,
+  evaluateCommands,
+  evaluateSpanStyles
 } from "./commands";
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "CodeBlock", "InlineCode"]);
@@ -45,6 +51,7 @@ interface VarState {
   rules: Map<string, RuleEntry>;
   fontRules: Map<string, FontRuleEntry>;
   commands: CommandRule[];
+  compiledCommands: ProgramNode;
   blocks: DeclBlockRange[];
   version: number;
 }
@@ -53,6 +60,7 @@ interface ReparsePayload {
   rules: Map<string, RuleEntry>;
   fontRules: Map<string, FontRuleEntry>;
   commands: CommandRule[];
+  compiledCommands: ProgramNode;
   blocks: DeclBlockRange[];
 }
 
@@ -66,14 +74,15 @@ const optionsFacet = Facet.define<ReactiveFeatureOptions, ReactiveFeatureOptions
 const varStateField = StateField.define<VarState>({
   create(state) {
     const options = state.facet(optionsFacet);
-    const { rules, fontRules, commands, blocks } = parseDeclarations(state.doc, options?.globalVars);
-    return { rules, fontRules, commands, blocks, version: 1 };
+    const { rules, fontRules, commands, compiledCommands, blocks } = parseDeclarations(state.doc, options?.globalVars);
+    return { rules, fontRules, commands, compiledCommands, blocks, version: 1 };
   },
   update(value, tr) {
     let blocks = value.blocks;
     let rules = value.rules;
     let fontRules = value.fontRules;
     let commands = value.commands;
+    let compiledCommands = value.compiledCommands;
     let version = value.version;
     if (tr.docChanged) {
       blocks = blocks.map((b) => ({
@@ -88,11 +97,12 @@ const varStateField = StateField.define<VarState>({
         rules = effect.value.rules;
         fontRules = effect.value.fontRules;
         commands = effect.value.commands;
+        compiledCommands = effect.value.compiledCommands;
         blocks = effect.value.blocks;
         version += 1;
       }
     }
-    return { rules, fontRules, commands, blocks, version };
+    return { rules, fontRules, commands, compiledCommands, blocks, version };
   }
 });
 
@@ -116,12 +126,79 @@ export function reactiveVariablesExtension(options: ReactiveFeatureOptions): Ext
     optionsFacet.of(options),
     varStateField,
     foldedSetField,
+    commandsIndentKeymap,
     createDecorationPlugin(options),
     createCssVarPlugin(options),
     debouncedReparsePlugin,
     colorAutocompletePlugin
   ];
 }
+
+function isCursorInCommandsSection(state: EditorState): boolean {
+  const pos = state.selection.main.head;
+  const vs = state.field(varStateField);
+  const block = vs.blocks.find(b => b.source === "vars-block" && pos >= b.from && pos <= b.to);
+  if (!block) return false;
+  const line = state.doc.lineAt(pos);
+  return getCurrentSectionOfLine(state.doc, line.number, block) === "commands";
+}
+
+const commandsIndentKeymap = Prec.high(
+  keymap.of([
+    {
+      key: "Tab",
+      run(view: EditorView): boolean {
+        if (!isCursorInCommandsSection(view.state)) return false;
+        const { from, to } = view.state.selection.main;
+        view.dispatch({
+          changes: { from, to, insert: "    " },
+          selection: { anchor: from + 4 }
+        });
+        return true;
+      }
+    },
+    {
+      key: "Shift-Tab",
+      run(view: EditorView): boolean {
+        if (!isCursorInCommandsSection(view.state)) return false;
+        const pos = view.state.selection.main.head;
+        const line = view.state.doc.lineAt(pos);
+        if (line.text.startsWith("\t")) {
+          view.dispatch({
+            changes: { from: line.from, to: line.from + 1, insert: "" }
+          });
+          return true;
+        }
+        const spaceMatch = /^ {1,4}/.exec(line.text);
+        if (spaceMatch) {
+          view.dispatch({
+            changes: { from: line.from, to: line.from + spaceMatch[0].length, insert: "" }
+          });
+        }
+        return true;
+      }
+    },
+    {
+      key: "Enter",
+      run(view: EditorView): boolean {
+        if (!isCursorInCommandsSection(view.state)) return false;
+        const { from, to } = view.state.selection.main;
+        const line = view.state.doc.lineAt(from);
+        const textBeforeCursor = line.text.slice(0, from - line.from);
+        const indentMatch = /^([ \t]*)/.exec(line.text);
+        const currentIndent = indentMatch?.[1] ?? "";
+        const trimmedBefore = textBeforeCursor.trim();
+        const extraIndent = trimmedBefore.endsWith(":") || /\bthen$/.test(trimmedBefore) ? "    " : "";
+        const insertStr = "\n" + currentIndent + extraIndent;
+        view.dispatch({
+          changes: { from, to, insert: insertStr },
+          selection: { anchor: from + insertStr.length }
+        });
+        return true;
+      }
+    }
+  ])
+);
 
 function createDecorationPlugin(options: ReactiveFeatureOptions): Extension {
   return ViewPlugin.fromClass(
@@ -185,8 +262,8 @@ const debouncedReparsePlugin = ViewPlugin.fromClass(
       if (this.timer) window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => {
         const options = update.state.facet(optionsFacet);
-        const { rules, fontRules, commands, blocks } = parseDeclarations(update.state.doc, options?.globalVars);
-        update.view.dispatch({ effects: reparseEffect.of({ rules, fontRules, commands, blocks }) });
+        const { rules, fontRules, commands, compiledCommands, blocks } = parseDeclarations(update.state.doc, options?.globalVars);
+        update.view.dispatch({ effects: reparseEffect.of({ rules, fontRules, commands, compiledCommands, blocks }) });
       }, 200);
     }
     destroy() { if (this.timer) window.clearTimeout(this.timer); }
@@ -372,19 +449,29 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
       });
     }
 
-    if (isFolded) {
       const endLineNum = view.state.doc.lineAt(block.to).number;
-      for (let ln = blockLineNum + 1; ln <= endLineNum; ln++) {
+      for (let ln = blockLineNum; ln <= endLineNum; ln++) {
         const line = view.state.doc.line(ln);
         if (isPosInVisibleRanges(line.from, visibleRanges)) {
-          decs.push({
-            from: line.from,
-            to: line.from,
-            value: Decoration.line({ class: "rv-vars-hidden" })
-          });
+          if (isFolded && ln > blockLineNum) {
+            decs.push({
+              from: line.from,
+              to: line.from,
+              value: Decoration.line({ class: "rv-vars-hidden" })
+            });
+          } else {
+            const sec = getCurrentSectionOfLine(view.state.doc, ln, block);
+            const lineCls = sec === "commands"
+              ? "concrete-vars-line concrete-vars-command-line"
+              : "concrete-vars-line";
+            decs.push({
+              from: line.from,
+              to: line.from,
+              value: Decoration.line({ class: lineCls })
+            });
+          }
         }
       }
-    }
   }
 
   // 2. Color swatches in un-folded blocks (bounded strictly to visibleRanges)
@@ -449,38 +536,99 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
         }
       }
 
-      // 3b. Declarative Line Commands (e.g. `if line 0 "(" + number + ")" then rd`, `if line ">" then ft_quote`)
-      if (varState.commands.length > 0 && lineNo !== activeLine) {
-        for (const cmd of varState.commands) {
-          if (cmd.type !== "line") continue;
+      // 3b. Python-Adjacent ##commands Evaluation (Whole-line & Partial Slice styles)
+      const hasCompiledCommands = varState.compiledCommands.body.length > 0;
+      if ((hasCompiledCommands || varState.commands.length > 0) && lineNo !== activeLine) {
+        if (hasCompiledCommands) {
+          const wordTokens = getLineTokens(line.text);
+          const evalResult = evaluateCommands(varState.compiledCommands, {
+            line: line.text.replace(/^[ \t]+/, ""),
+            rawLine: line.text,
+            wordTokens,
+            words: wordTokens.map(w => w.text),
+            line_num: lineNo,
+            mode: "line"
+          });
 
-          if (cmd.scope === "word" && cmd.wordIndex !== undefined) {
-            const tokens = getLineTokens(line.text);
-            const token = tokens[cmd.wordIndex];
-            if (token && cmd.patternRegex.test(token.text)) {
-              const from = line.from + token.from;
-              const to = line.from + token.to;
-              const { className, styleAttrs } = resolveTargetStyleAttributes(cmd.targetStyle, varState, options);
+          if (evalResult.lineStyles.size > 0 && line.from <= line.to) {
+            const { className, styleAttrs } = resolveMultipleStyles(
+              evalResult.lineStyles,
+              varState.rules,
+              varState.fontRules,
+              options
+            );
+            decs.push({
+              from: line.from,
+              to: line.from,
+              value: Decoration.line({
+                class: className,
+                ...(styleAttrs.style ? { attributes: styleAttrs } : {})
+              })
+            });
+            if (line.from < line.to) {
+              decs.push({
+                from: line.from,
+                to: line.to,
+                value: Decoration.mark({
+                  class: className,
+                  ...(styleAttrs.style ? { attributes: styleAttrs } : {})
+                })
+              });
+            }
+          }
+
+          for (const slice of evalResult.sliceStyles) {
+            const from = Math.max(line.from, Math.min(line.to, line.from + slice.fromOffset));
+            const to = Math.max(from, Math.min(line.to, line.from + slice.toOffset));
+            if (from < to && slice.styles.size > 0) {
+              const { className, styleAttrs } = resolveMultipleStyles(
+                slice.styles,
+                varState.rules,
+                varState.fontRules,
+                options
+              );
               decs.push({
                 from,
                 to,
-                value: Decoration.mark({ class: className, attributes: styleAttrs })
+                value: Decoration.mark({
+                  class: className,
+                  ...(styleAttrs.style ? { attributes: styleAttrs } : {})
+                })
               });
             }
-          } else if (cmd.scope === "line") {
-            const tokens = getLineTokens(line.text);
-            const firstToken = tokens[0]?.text ?? "";
-            const isMatch = cmd.patternRegex.test(line.text) || (firstToken ? cmd.patternRegex.test(firstToken) : false);
-            if (isMatch) {
-              const from = line.from;
-              const to = line.to;
-              if (from < to) {
+          }
+        } else {
+          for (const cmd of varState.commands) {
+            if (cmd.type !== "line") continue;
+
+            if (cmd.scope === "word" && cmd.wordIndex !== undefined) {
+              const tokens = getLineTokens(line.text);
+              const token = tokens[cmd.wordIndex];
+              if (token && cmd.patternRegex.test(token.text)) {
+                const from = line.from + token.from;
+                const to = line.from + token.to;
                 const { className, styleAttrs } = resolveTargetStyleAttributes(cmd.targetStyle, varState, options);
                 decs.push({
                   from,
                   to,
                   value: Decoration.mark({ class: className, attributes: styleAttrs })
                 });
+              }
+            } else if (cmd.scope === "line") {
+              const tokens = getLineTokens(line.text);
+              const firstToken = tokens[0]?.text ?? "";
+              const isMatch = cmd.patternRegex.test(line.text) || (firstToken ? cmd.patternRegex.test(firstToken) : false);
+              if (isMatch) {
+                const from = line.from;
+                const to = line.to;
+                if (from < to) {
+                  const { className, styleAttrs } = resolveTargetStyleAttributes(cmd.targetStyle, varState, options);
+                  decs.push({
+                    from,
+                    to,
+                    value: Decoration.mark({ class: className, attributes: styleAttrs })
+                  });
+                }
               }
             }
           }
@@ -521,8 +669,28 @@ function buildDecorations(view: EditorView, options: ReactiveFeatureOptions): De
           }
         }
 
-        // Apply any chained styles: if rd then ft1
-        if (chainCmds.length > 0) {
+        // Apply any chained styles: e.g. `if rd: ft1` or `if rd and "!" in span: text_ft4_size`
+        const spanText = view.state.doc.sliceString(m.contentFrom, m.contentTo);
+        if (hasCompiledCommands) {
+          const cascadedStyles = evaluateSpanStyles(
+            varState.compiledCommands,
+            [m.rule.key],
+            spanText,
+            line.text,
+            undefined,
+            lineNo
+          );
+          for (const cStyle of cascadedStyles) {
+            if (cStyle !== m.rule.key) {
+              const res = resolveMultipleStyles([cStyle], varState.rules, varState.fontRules, options);
+              if (res.className) markClass += ` ${res.className}`;
+              if (res.styleAttrs.style) {
+                if (!markAttrs) markAttrs = {};
+                markAttrs.style = (markAttrs.style || "") + res.styleAttrs.style;
+              }
+            }
+          }
+        } else if (chainCmds.length > 0) {
           const chained = resolveChainedStyles([m.rule.key], chainCmds);
           for (const cStyle of chained) {
             if (cStyle !== m.rule.key) {

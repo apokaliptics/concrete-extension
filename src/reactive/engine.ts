@@ -1,5 +1,11 @@
 import { Text } from "@codemirror/state";
-import { CommandRule, parseCommandLine } from "./commands";
+import {
+  CommandRule,
+  ProgramNode,
+  parseCommandLine,
+  tokenizeCommands,
+  parseCommands
+} from "./commands";
 
 export type DeclSource = "frontmatter" | "vars-block";
 
@@ -49,6 +55,7 @@ export interface ParseResult {
   rules: Map<string, RuleEntry>;
   fontRules: Map<string, FontRuleEntry>;
   commands: CommandRule[];
+  compiledCommands: ProgramNode;
   blocks: DeclBlockRange[];
 }
 
@@ -163,14 +170,16 @@ export function parseGlobalVars(
   globalVarsStr: string,
   rules: Map<string, RuleEntry>,
   fontRules: Map<string, FontRuleEntry>,
-  commands: CommandRule[]
+  commands: CommandRule[],
+  commandLinesOut?: string[]
 ) {
   if (!globalVarsStr) return;
   const lines = globalVarsStr.split("\n");
   let currentSection: "colors" | "text" | "commands" | "default" = "default";
 
   for (let i = 0; i < lines.length; i++) {
-    const text = (lines[i] || "").trim();
+    const rawLine = lines[i] || "";
+    const text = rawLine.trim();
     if (!text) continue;
 
     if (text.startsWith("##")) {
@@ -188,6 +197,9 @@ export function parseGlobalVars(
     if (text.startsWith("#")) continue;
 
     if (currentSection === "commands") {
+      if (commandLinesOut) {
+        commandLinesOut.push(rawLine);
+      }
       const cmd = parseCommandLine(text);
       if (cmd) {
         commands.push(cmd);
@@ -237,6 +249,12 @@ export function parseGlobalVars(
       addWrapperRule(rules, val, { ...style, val: key });
     } else if (isCssRuleKey(key)) {
       addCssRule(rules, key, style);
+      if (isTextSizeRuleKey(key)) {
+        const sizePrefix = key.replace(/^text_/i, "").replace(/_size$/i, "");
+        if (sizePrefix && sizePrefix !== "header" && sizePrefix !== "paragraph") {
+          addWrapperRule(rules, sizePrefix, { val: sizePrefix, section: "text", valFrom: -1, valTo: -1 });
+        }
+      }
     } else {
       addWrapperRule(rules, key, style);
     }
@@ -247,18 +265,24 @@ export function parseDeclarations(doc: Text, globalVarsStr?: string): ParseResul
   const rules = new Map<string, RuleEntry>();
   const fontRules = new Map<string, FontRuleEntry>();
   const commands: CommandRule[] = [];
+  const commandLines: string[] = [];
   
   if (globalVarsStr) {
-    parseGlobalVars(globalVarsStr, rules, fontRules, commands);
+    parseGlobalVars(globalVarsStr, rules, fontRules, commands, commandLines);
   }
 
   const blocks = findDeclarationBlocks(doc);
 
   for (const block of blocks) {
-    parseBlock(doc, block, rules, fontRules, commands);
+    parseBlock(doc, block, rules, fontRules, commands, commandLines);
   }
 
-  return { rules, fontRules, commands, blocks };
+  const commandsSource = commandLines.join("\n");
+  const compiledCommands: ProgramNode = commandsSource.trim()
+    ? parseCommands(tokenizeCommands(commandsSource))
+    : { type: "Program", body: [] };
+
+  return { rules, fontRules, commands, compiledCommands, blocks };
 }
 
 function parseBlock(
@@ -266,14 +290,16 @@ function parseBlock(
   block: DeclBlockRange,
   rules: Map<string, RuleEntry>,
   fontRules: Map<string, FontRuleEntry>,
-  commands: CommandRule[]
+  commands: CommandRule[],
+  commandLinesOut: string[]
 ) {
   const startLine = doc.lineAt(block.from).number;
   const endLine = doc.lineAt(block.to).number;
   let currentSection: "colors" | "text" | "commands" | "default" = "default";
 
   for (let lineNo = startLine + 1; lineNo <= endLine - 1; lineNo += 1) {
-    const text = doc.line(lineNo).text.trim();
+    const rawLine = doc.line(lineNo).text;
+    const text = rawLine.trim();
     if (!text) continue;
 
     if (text.startsWith("##")) {
@@ -291,6 +317,7 @@ function parseBlock(
     if (text.startsWith("#")) continue;
 
     if (currentSection === "commands") {
+      commandLinesOut.push(rawLine);
       const cmd = parseCommandLine(text);
       if (cmd) {
         commands.push(cmd);
@@ -343,6 +370,12 @@ function parseBlock(
       addWrapperRule(rules, val, { ...style, val: key });
     } else if (isCssRuleKey(key)) {
       addCssRule(rules, key, style);
+      if (isTextSizeRuleKey(key)) {
+        const sizePrefix = key.replace(/^text_/i, "").replace(/_size$/i, "");
+        if (sizePrefix && sizePrefix !== "header" && sizePrefix !== "paragraph") {
+          addWrapperRule(rules, sizePrefix, { val: sizePrefix, section: "text", valFrom: valStart, valTo: valEnd });
+        }
+      }
     } else {
       addWrapperRule(rules, key, style);
     }
@@ -575,6 +608,175 @@ export function isColorString(val: string): boolean {
 
 export function containsImageMarkdown(text: string): boolean {
   return /!\[\[.*?\]\]|!\[.*?\]\(.*?\)/.test(text);
+}
+
+export interface ResolvedStyleBundle {
+  className: string;
+  styleStr: string;
+  styleAttrs: Record<string, string>;
+}
+
+const WEIGHT_MAP: Record<string, string> = {
+  thin: "100",
+  extralight: "200",
+  light: "300",
+  normal: "400",
+  regular: "400",
+  medium: "500",
+  semibold: "600",
+  bold: "700",
+  extrabold: "800",
+  black: "900"
+};
+
+export function resolveStyleBundle(
+  styleName: string,
+  rules: Map<string, RuleEntry>,
+  fontRules: Map<string, FontRuleEntry>,
+  options: { enableColorVariables: boolean; enableTextVariables: boolean }
+): ResolvedStyleBundle {
+  const classes = new Set<string>(["rv-styled"]);
+  let styleStr = "";
+
+  const normalized = styleName.trim();
+  if (!normalized) {
+    return { className: "rv-styled", styleStr: "", styleAttrs: {} };
+  }
+
+  // 1. Direct color string or named color
+  if (isColorString(normalized)) {
+    if (options.enableColorVariables) {
+      const col = resolveColorNameOrAbbrev(normalized);
+      styleStr += `color: ${col};`;
+    }
+  }
+
+  // 2. Standard text style keywords (bold, italic, underline, strikethrough, highlight, header, paragraph)
+  if (STANDARD_TEXT_STYLES.has(normalized.toLowerCase()) && options.enableTextVariables) {
+    const kw = normalized.toLowerCase();
+    classes.add(`rv-${kw}`);
+    const sizeRule = rules.get(`text_${kw}_size`) ?? rules.get(`${kw}_size`);
+    const lastSize = sizeRule?.styles[sizeRule.styles.length - 1];
+    if (lastSize) {
+      let v = lastSize.val;
+      if (/^\d+$/.test(v)) v += "px";
+      styleStr += `font-size: ${v};`;
+    }
+  }
+
+  // 3. Check if `styleName` is an exact property key like `text_ft4_size`, `paragraph_size`, `text_ft1_font`, `text_ft1_weight`
+  const exactRule = rules.get(normalized);
+  if (exactRule) {
+    if (exactRule.type === "css") {
+      const last = exactRule.styles[exactRule.styles.length - 1];
+      if (last) {
+        if ((last.section === "colors" || isColorString(last.val)) && options.enableColorVariables) {
+          styleStr += `color: ${last.val};`;
+        } else if (options.enableTextVariables) {
+          const lowerKey = normalized.toLowerCase();
+          if (lowerKey.endsWith("_size") || lowerKey.endsWith(".size")) {
+            let v = last.val;
+            if (/^\d+$/.test(v)) v += "px";
+            styleStr += `font-size: ${v};`;
+          } else if (lowerKey.endsWith("_font") || lowerKey.endsWith(".font")) {
+            styleStr += `font-family: ${last.val};`;
+          } else if (lowerKey.endsWith("_weight") || lowerKey.endsWith(".weight")) {
+            const w = WEIGHT_MAP[last.val.toLowerCase()] ?? last.val;
+            styleStr += `font-weight: ${w};`;
+          }
+        }
+      }
+    } else {
+      // Wrapper rule
+      for (const s of exactRule.styles) {
+        if (s.section === "colors" || isColorString(s.val)) {
+          if (options.enableColorVariables) {
+            styleStr += `color: ${s.val};`;
+          }
+        } else if (options.enableTextVariables) {
+          if (s.val.startsWith("font:")) {
+            const fName = s.val.slice(5);
+            const fRule = fontRules.get(fName);
+            if (fRule) {
+              styleStr += `font-family: ${fRule.cssValue};`;
+            }
+          } else {
+            classes.add(`rv-${s.val}`);
+            const sizeEntry = rules.get(`text_${s.val}_size`) ?? rules.get(`${s.val}_size`);
+            const lastSize = sizeEntry?.styles[sizeEntry.styles.length - 1];
+            if (lastSize) {
+              let v = lastSize.val;
+              if (/^\d+$/.test(v)) v += "px";
+              styleStr += `font-size: ${v};`;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Check if `styleName` is a bundle prefix (e.g. `ft1` -> `text_ft1_font`, `text_ft1_size`, `text_ft1_weight`)
+  if (options.enableTextVariables) {
+    const fRule = fontRules.get(normalized) ?? fontRules.get(normalized.replace(/^text_/, "").replace(/_font$/, ""));
+    if (fRule && !styleStr.includes("font-family:")) {
+      styleStr += `font-family: ${fRule.cssValue};`;
+    }
+
+    const sizeRule = rules.get(`text_${normalized}_size`) ?? rules.get(`${normalized}_size`);
+    if (sizeRule && !styleStr.includes("font-size:")) {
+      const last = sizeRule.styles[sizeRule.styles.length - 1];
+      if (last) {
+        let v = last.val;
+        if (/^\d+$/.test(v)) v += "px";
+        styleStr += `font-size: ${v};`;
+      }
+    }
+
+    const weightRule = rules.get(`text_${normalized}_weight`) ?? rules.get(`${normalized}_weight`);
+    if (weightRule && !styleStr.includes("font-weight:")) {
+      const last = weightRule.styles[weightRule.styles.length - 1];
+      if (last) {
+        const w = WEIGHT_MAP[last.val.toLowerCase()] ?? last.val;
+        styleStr += `font-weight: ${w};`;
+      }
+    }
+  }
+
+  const className = Array.from(classes).join(" ").trim();
+  const styleAttrs: Record<string, string> = {};
+  if (styleStr) {
+    styleAttrs.style = styleStr;
+  }
+
+  return { className, styleStr, styleAttrs };
+}
+
+export function resolveMultipleStyles(
+  styleNames: Iterable<string>,
+  rules: Map<string, RuleEntry>,
+  fontRules: Map<string, FontRuleEntry>,
+  options: { enableColorVariables: boolean; enableTextVariables: boolean }
+): ResolvedStyleBundle {
+  const classes = new Set<string>(["rv-styled"]);
+  let styleStr = "";
+
+  for (const name of styleNames) {
+    const res = resolveStyleBundle(name, rules, fontRules, options);
+    for (const cls of res.className.split(/\s+/)) {
+      if (cls) classes.add(cls);
+    }
+    if (res.styleStr) {
+      styleStr += res.styleStr;
+    }
+  }
+
+  const className = Array.from(classes).join(" ").trim();
+  const styleAttrs: Record<string, string> = {};
+  if (styleStr) {
+    styleAttrs.style = styleStr;
+  }
+
+  return { className, styleStr, styleAttrs };
 }
 
 export function stripVariables(text: string): string {

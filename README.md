@@ -34,34 +34,38 @@ Define custom text wrappers, inline color styles, font families, declarative com
 - **Active note canvas font** — Define `font = <family>` (e.g., `font = Arial` or `font = "Space Grotesk"`) under `##text` to apply that font across the active note's editing canvas (`.cm-content`) and reading view (`.markdown-rendered`).
 - **Smart fallback stacks** — Automatically resolves font fallback stacks (`monospace` for mono/code fonts, `serif` for serif families, and `sans-serif` otherwise).
 
-### Declarative `##commands` rule engine
+### Python-adjacent `##commands` rule engine
 
-- **Word-level position matching** — Style words based on their position on a line:
-  ```markdown
-  if line 0 "(" + number + ")" then rd
-  if line 0 word then rd
+- **Python-style indentation & syntax** — Write rules using standard `:` syntax with single-line or multi-line indented blocks (4 spaces or Tab):
+  ```python
+  if line[0] == ">":
+      bl
+      ft2
   ```
-  Applies the target style (`rd`) strictly to the matched word/token at index `0` (`(1)`, `(2)`, etc.).
-- **Entire line styling** — Apply styling across the entire line:
-  ```markdown
-  if line ">" then ft_quote
-  if line 0 ">" then ft_quote
-  if line word then ft_quote
+- **Built-in context variables** — Direct inspection of document text without regex boilerplate:
+  - `line` — Line string (supports indexing `line[0]`, slicing `line[:3]`, and `line.raw`).
+  - `words` — Whitespace-separated token array (`words[0]`, `words[-1]`, `len(words)`).
+  - `span` — Inner text of the current inline tag (`"hello world"` in `rd hello world rd`).
+  - `line_num` — 1-based note line number.
+- **Safe indexing guarantee** — Accessing `line[0]` or `words[0]` on empty lines safely yields `""` instead of raising exceptions or breaking the editor.
+- **Partial line & slice styling (`=`)** — Target specific slices of a line rather than styling the whole line:
+  ```python
+  line[0] = rd                      # Style only first character
+  words[0] = bl, ft2                # Style only first word
+  line["(" : ")"] = gr              # Delimiter slice shorthand
+  line[:line.find(":") + 1] = rd    # Dynamic prefix styling
   ```
-  Applies the target style (e.g., `ft_quote` font) across the entire line whenever the condition is matched.
-- **Style chaining** — Automatically attach secondary styles to primary rules:
-  ```markdown
-  if rd then ft1
+- **Rich comparisons & string methods** — Use `and`, `or`, `not`, `in`, `not in`, chained comparisons (`1 <= len(words) <= 4`), and string methods (`startswith`, `endswith`, `find`, `count`, `lower`, `upper`, `strip`).
+- **Branching & nested conditions** — Full `if` / `elif` / `else` chains and nested indentation blocks.
+- **Loops & style presets** — Define style bundles with `+` (`callout = bl + ft2`) and unroll loops over lists, tuples, or `range()`:
+  ```python
+  for col, font in [(rd, ft1), (bl, ft2)]:
+      if col: font
   ```
-  Whenever text is styled with `rd` (red), font `ft1` (`Inter`) is chained and applied as well.
-- **Concatenation & pattern tokens** — Combine pattern tokens using `+`:
-  - `number`: `\d+`
-  - `word`: `\S+`
-  - `alpha`: `[a-zA-Z]+`
-  - `heading` / `#`: `#{1,6}`
-  - `-` / `bullet`: `[-*+]`
-  - `">"` / `quote`: `>`
-  - String literals: `"..."` or `'...'` (e.g., `"("`, `")"`)
+- **Transitive style cascades** — Automatically cascades triggered styles up to 5 fixed-point passes (e.g. `if line[0] == "-": bl` cascades into `if bl: ft2`).
+- **Style negation (`-style`)** — Remove or cancel earlier active styles in specific branches using `-style` (e.g., `-rd`).
+- **Smart indentation keymap** — Inside `:::vars` under `##commands`, `Tab` inserts 4 spaces, `Shift-Tab` dedents, and `Enter` preserves or auto-indents after `:`.
+- **100% legacy backward compatible** — Existing `if bl then ft2` and `if line 0 "(" + number + ")" then rd` rules continue to work seamlessly.
 
 ### Native list interception
 
@@ -189,22 +193,204 @@ ft1 This text will render in Inter ft1
 ^^This will render as a large header^^
 ```
 
-### 5. Declarative commands
+### 5. Declarative commands (`##commands`)
 
-Automate styling with declarative rules under `##commands`:
+Under the `##commands` section, you can write expressive, indentation-aware rules using a Python-adjacent syntax to dynamically style lines, slices, and tokens without combinatorial variable bloat.
 
-```yaml
+#### 5.1. Basic variable-to-variable linking (`if`)
+
+Link colors, typography bundles, or size properties to one or more targets using `:` (single-line or indented block). Legacy `then` is fully supported as an alias for `:`.
+
+```python
 ##commands
-# Style first word matching pattern (1), (2), etc. in red
-if line 0 "(" + number + ")" then rd
+# Single-line syntax
+if rd: ft1
+if bl: ft2, text_ft4_size
 
-# Style the first word of any line in red
+# Multi-line indented syntax (using Tab or 4 spaces)
+if gr:
+    ft3
+    paragraph_size
+
+# Legacy syntax (100% backward-compatible)
+if rd then ft1
+```
+
+#### 5.2. Built-in context objects
+
+The rule engine exposes four built-in variables representing the line or token being evaluated:
+
+| Variable | Type | Description | Examples |
+|---|---|---|---|
+| `line` | `String` | Text of the current line (excluding leading indentation). Use `line.raw` for the unstripped line. | `line[0]`, `line[:3]`, `line[-1]` |
+| `words` | `List[String]` | Whitespace-separated tokens on the line. | `words[0]`, `words[-1]`, `len(words)` |
+| `span` | `String` | Inner text of the tag being styled when evaluating inline wrappers (e.g. `rd hello rd` &rarr; `span = "hello"`). | `"!" in span` |
+| `line_num` | `Number` | 1-based note line number. | `line_num % 2 == 0` |
+
+> **Safe Indexing Guarantee:** Slicing or indexing empty lines or lists (`line[0]` on an empty line or `words[0]` on a blank line) **never throws an error**. It safely returns `""` so the editor never stutters while typing.
+
+#### 5.3. Character & list slicing (`[start:stop:step]`)
+
+Inspect exact character positions, prefixes, suffixes, or words using Python slice notation:
+
+```python
+##commands
+# Character positions (0 = first character, -1 = last character)
+if line[0] == ">": text_ft4_font
+if line[-1] == ":": bl, ft2
+
+# Enclosed line check (starts with "(" and ends with ")")
+if line[0] == "(" and line[-1] == ")": rd
+
+# Prefix and suffix slicing
+if line[:2] == "- ": text_ft1_font
+if line[:3] == "###": gr, ft3
+if line[-3:] == "...": rd
+
+# Word-level indexing
+if words[0] == "NOTE:": bl, ft2
+if words[-1] == "DONE": gr
+```
+
+#### 5.4. Partial line & slice styling (Target assignment `=`)
+
+By default, writing `if line[0] == ">": rd` applies `rd` to the entire line. To style only a specific slice, word, or delimited segment, assign styles directly to the target slice using `=`:
+
+```python
+##commands
+# Style ONLY the first character '>' in red, whole line gets ft4
+if line[0] == ">":
+    ft4
+    line[0] = rd
+
+# Style only the first word of a bullet list item
+if line[:2] == "- ":
+    words[1] = rd, ft1
+
+# Style dynamic text before a colon (e.g., "Author: John Doe" -> "Author:" in blue ft2)
+if ":" in line:
+    line[:line.find(":") + 1] = bl, ft2
+
+# Delimiter Slice Shorthand: styles any substring enclosed in "(" and ")" on the line
+if "(" in line and ")" in line:
+    line["(" : ")"] = rd, ft2
+```
+
+#### 5.5. Booleans, membership (`in`), and string methods
+
+Combine complex rules with standard logical and membership operators:
+
+* **Logical operators:** `and`, `or`, `not`
+* **Membership operators:** `in`, `not in`
+* **Comparison operators:** `==`, `!=`, `<`, `>`, `<=`, `>=` (including chained comparisons like `1 <= len(words) <= 4`)
+* **Built-in helpers & methods:**
+  - `len(x)` — Character length of `line`/`span` or token count of `words`.
+  - `line.startswith("...")`, `line.endswith("...")`
+  - `line.find("...")`, `line.count("...")`
+  - `line.lower()`, `line.upper()`, `line.strip()`
+
+```python
+##commands
+# Substring membership
+if "TODO" in line or "FIXME" in line:
+    rd, ft1
+
+# List membership
+if words[0] in ["WARNING:", "ERROR:", "CRITICAL:"]:
+    rd, ft2, text_ft4_size
+
+# Heading-like detection via word count
+if 1 <= len(words) <= 4 and line[-1] != ".":
+    bl, text_ft4_size
+
+# Inline span check (only applies ft4 if the tagged word contains '!')
+if rd and "!" in span:
+    text_ft4_size
+```
+
+#### 5.6. Branching & indentation (`if` / `elif` / `else`)
+
+Structure conditional styles with indentation (Tab or 4 spaces):
+
+```python
+##commands
+if line[:2] == "# ":
+    rd, ft1, text_ft4_size
+elif line[0] == ">":
+    bl, ft2
+    # Nested condition:
+    if "!" in line:
+        rd
+    elif "?" in line:
+        gr
+elif line[0] == "-":
+    text_ft1_font
+else:
+    ft3, paragraph_size
+```
+
+#### 5.7. Loops, style presets, and style negation
+
+Define reusable style bundles with `+` and generate repetitive rules with `for` loops:
+
+```python
+##commands
+# 1. Reusable style presets
+callout = bl + ft2 + text_ft4_size
+danger = rd + ft1
+
+if line[0] == ">": callout
+if "URGENT" in line: danger
+
+# 2. Batch-link colors to fonts with tuple unpacking
+for col, font in [(rd, ft1), (bl, ft2), (gr, ft3)]:
+    if col: font
+
+# 3. Match multiple prefixes cleanly
+for sym in [">", "|", "!"]:
+    if line[0] == sym:
+        callout
+        line[0] = rd
+
+# 4. Numbered list prefixes using range() and f-strings
+for n in range(1, 10):
+    if line[:2] == f"{n}.":
+        ft1
+        line[:2] = bl
+
+# 5. Style negation (-style)
+if line[0] == "!":
+    callout
+    -bl         # Removes bl from callout preset
+    rd          # Replaces with rd
+```
+
+#### 5.8. Cascades & prefix bundle resolution
+
+* **Transitive cascades:** Evaluates rules in up to 5 fixed-point passes. If Rule 1 sets `if line[0] == "(": rd` and Rule 2 sets `if rd: ft1`, a line starting with `(` receives both `rd` and `ft1`.
+* **Prefix bundle resolution:** Declaring `text_ft1_font = Inter` and `text_ft1_size = 20` creates a bundle named `ft1`. Referencing `ft1` applies all bundled properties, while `text_ft1_font` or dot access `ft1.font` targets only that specific property.
+
+#### 5.9. Smart editor indentation
+
+When writing inside a `:::vars` block under the `##commands` section:
+- **`Tab`** inserts 4 spaces instead of jumping focus or indenting the note.
+- **`Shift-Tab`** dedents the line by up to 4 spaces or 1 tab.
+- **`Enter`** automatically carries over the current indentation and indents an extra 4 spaces if the line ends with `:` or `then`.
+
+#### 5.10. Legacy command syntax reference
+
+All existing commands from earlier versions continue to operate with 100% backward compatibility:
+
+```markdown
+##commands
+# Word position matching
+if line 0 "(" + number + ")" then rd
 if line 0 word then rd
 
-# Style entire blockquote lines in Merriweather font
+# Entire line styling
 if line ">" then ft_quote
 
-# Style chaining: wherever rd is applied, also apply ft1 font
+# Style chaining
 if rd then ft1
 ```
 

@@ -271,3 +271,12 @@ body .markdown-preview-view.markdown-preview-view ul ul ul ul ul ul > li::marker
 .markdown-preview-view.concrete-has-font .markdown-rendered {
 	font-family: var(--concrete-note-font);
 }
+
+/* Keep indented Python blocks inside :::vars visually clean and aligned */
+.cm-line.concrete-vars-line,
+.cm-line.concrete-vars-command-line {
+	font-family: var(--font-monospace);
+	tab-size: 4;
+	background-color: transparent !important;
+}
+

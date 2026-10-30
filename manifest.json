@@ -1,7 +1,7 @@
 {
 	"id": "concrete",
 	"name": "Concrete",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"minAppVersion": "1.6.0",
 	"description": "Keyboard-first reactive variable and formatting engine for Markdown.",
 	"author": "apokaliptics",
